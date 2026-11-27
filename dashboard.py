@@ -227,25 +227,68 @@ def show_dashboard():
         st.dataframe(pd.read_csv(g.LOG_FILE).tail(30))
 
 
+PLOT_CONFIG = {
+    "scrollZoom": True, "displaylogo": False,
+    "modeBarButtonsToAdd": ["drawline", "drawopenpath", "drawrect",
+                            "drawcircle", "eraseshape"],
+}
+
+
+@st.cache_data(ttl=55, show_spinner="Loading basket data...")
+def load_basket_table(timeframe):
+    """Gold priced in each currency, at the chosen timeframe."""
+    interval, period, resample = pricechart.TIMEFRAMES[timeframe]
+    gold = pricechart.get_ohlc("GC=F", interval, period, resample)["Close"]
+    fx = {}
+    for code, (ticker, _kind) in basket.CURRENCIES.items():
+        try:
+            fx[code] = pricechart.get_ohlc(ticker, interval, period, resample)["Close"]
+        except Exception:
+            pass   # skip a currency whose data is missing (KES is often patchy)
+    return basket.build_basket(gold, fx, intraday=(interval != "1d"))
+
+
 def show_basket():
-    """Gold priced in USD and other currencies."""
+    """Gold priced in USD and other currencies, as a chart."""
     data, _errors = load_data()
     gold, fx = data.get("gold"), data.get("fx", {})
     if gold is None or not fx:
         st.warning("The basket needs gold and currency data. "
                    "See the warnings on the Macro check tab.")
         return
-    table = basket.build_basket(gold, fx)
-    summary = basket.summarise(table)
+    summary = basket.summarise(basket.build_basket(gold, fx))
     above = int(summary["Above 50 SMA"].sum())
     st.metric("Gold above its 50 SMA in", f"{above} of {len(summary)} currencies")
     st.write(basket.read_breadth(summary))
-    st.subheader("Gold priced in each currency")
-    st.dataframe(summary.round(2))
-    st.subheader("Last 120 days, all set to 100 at the start")
-    st.line_chart(table.tail(120) / table.tail(120).iloc[0] * 100)
-    st.caption("Lines that move together mean the move is in gold itself. "
-               "If USD moves differently from the rest, the dollar is driving it.")
+
+    col1, col2, col3 = st.columns(3)
+    timeframe = col1.selectbox("Timeframe", list(pricechart.TIMEFRAMES),
+                               index=len(pricechart.TIMEFRAMES) - 1,
+                               key="basket_timeframe")
+    zone_name = col2.selectbox("Time zone", list(pricechart.TIMEZONES),
+                               key="basket_zone")
+    candles = col3.slider("Candles shown", 50, 400, 150, key="basket_candles")
+    try:
+        table = load_basket_table(timeframe)
+    except Exception as error:
+        st.warning(f"Could not load basket chart data: {error}")
+        return
+    lines = st.multiselect("Currencies shown", list(table.columns),
+                           default=list(table.columns), key="basket_lines")
+    shown = st.multiselect("Indicators on the basket index",
+                           list(pricechart.INDICATORS),
+                           default=list(pricechart.INDICATORS), key="basket_indicators")
+    fig = pricechart.basket_figure(
+        table, shown, lines, candles,
+        uirevision=f"basket-{timeframe}-{candles}", timeframe=timeframe,
+        tz=pricechart.TIMEZONES[zone_name])
+    st.plotly_chart(fig, config=PLOT_CONFIG)
+    st.caption("Every line starts at 100. The thick black line is the basket "
+               "index (the average of the lines). Lines moving together mean the "
+               "move is in gold itself. If USD moves differently from the rest, "
+               "the dollar is driving it. Data: Yahoo Finance.")
+    with st.expander("Table: gold priced in each currency (daily)"):
+        st.dataframe(summary.round(2))
 
 
 @st.cache_data(ttl=55, show_spinner="Loading chart data...")
@@ -255,39 +298,67 @@ def load_ohlc(symbol, timeframe):
     return pricechart.get_ohlc(ticker, interval, period, resample)
 
 
+@st.cache_data(ttl=300)
+def load_previous_day(symbol):
+    ticker = pricechart.SYMBOLS[symbol][0]
+    return pricechart.previous_day_levels(pricechart.get_ohlc(ticker, "1d", "15d"))
+
+
 def show_chart():
     """Interactive candlestick chart with your Backtesting 2.0 indicators."""
-    col1, col2, col3 = st.columns([2, 1, 1])
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
     symbol = col1.selectbox("Symbol", list(pricechart.SYMBOLS), key="chart_symbol")
     timeframe = col2.selectbox("Timeframe", list(pricechart.TIMEFRAMES),
                                index=1, key="chart_timeframe")
-    candles = col3.slider("Candles shown", 50, 400, 120, key="chart_candles")
+    zone_name = col3.selectbox("Time zone", list(pricechart.TIMEZONES),
+                               key="chart_zone")
+    candles = col4.slider("Candles shown", 50, 400, 120, key="chart_candles")
     shown = st.multiselect("Indicators", list(pricechart.INDICATORS),
                            default=list(pricechart.INDICATORS), key="chart_indicators")
-    is_gold = symbol.startswith("Gold")
-    show_levels = is_gold and st.checkbox("Show my support/resistance levels",
-                                          value=True, key="chart_levels")
+    opt1, opt2 = st.columns(2)
+    show_prev = opt1.checkbox("Previous day high / low / equilibrium",
+                              value=True, key="chart_prev_day")
+    show_levels = opt2.checkbox("My support / resistance levels (Gold)",
+                                value=False, key="chart_levels")
+
+    _ticker, deriv_key, scale, decimals = pricechart.SYMBOLS[symbol]
     try:
         df = load_ohlc(symbol, timeframe)
     except Exception as error:
         st.warning(f"Could not load chart data: {error}")
         return
     live, _live_errors = load_live()
-    live_price = live.get(pricechart.SYMBOLS[symbol][1])
+    live_price = live.get(deriv_key)
+    bid, ask = live.get(f"{deriv_key}_bid"), live.get(f"{deriv_key}_ask")
+    bid_ask = (bid, ask) if bid is not None and ask is not None else None
+
+    prev_day = None
+    if show_prev:
+        try:
+            prev_day = load_previous_day(symbol)
+        except Exception:
+            st.caption("Previous day levels are not available right now.")
     levels = []
-    if show_levels:
+    if show_levels and symbol.startswith("Gold"):
         levels = ([(x, "support") for x in g.SUPPORT_LEVELS]
                   + [(x, "resistance") for x in g.RESISTANCE_LEVELS])
+
     fig = pricechart.make_figure(
         df, shown, candles, levels, live_price,
-        uirevision=f"{symbol}-{timeframe}-{candles}")
-    st.plotly_chart(fig, config={"scrollZoom": True, "displaylogo": False})
-    st.caption("Drag to move, scroll to zoom, double-click to reset. Times are "
-               "Nairobi time. Candles come from Yahoo Finance.")
+        uirevision=f"{symbol}-{timeframe}-{candles}", prev_day=prev_day,
+        bid_ask=bid_ask, name=pricechart.short_name(symbol), timeframe=timeframe,
+        subtitle=pricechart.SUBTITLES.get(symbol, ""),
+        tz=pricechart.TIMEZONES[zone_name], spread_scale=scale, decimals=decimals)
+    st.plotly_chart(fig, config=PLOT_CONFIG)
+    st.caption("Drag to move, scroll to zoom, double-click to reset. Use the "
+               "toolbar at the top right of the chart to draw lines and boxes. "
+               "Candles come from Yahoo Finance. The SELL / BUY box shows Deriv's "
+               "live bid and ask; it is a price display, not an order button.")
     if live_price is not None:
         gap = live_price - float(df["Close"].iloc[-1])
-        st.caption(f"Yahoo last price {df['Close'].iloc[-1]:,.2f} vs Deriv live "
-                   f"{live_price:,.2f} (gap {gap:+.2f}). Small gaps are normal: "
+        st.caption(f"Yahoo last price {df['Close'].iloc[-1]:,.{decimals}f} vs Deriv "
+                   f"live {live_price:,.{decimals}f} (gap {gap:+.{decimals}f}). The "
+                   "orange price tag is Deriv's live price. Small gaps are normal: "
                    "Yahoo's gold is futures, Deriv's is spot.")
 
 

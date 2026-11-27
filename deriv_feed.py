@@ -33,10 +33,11 @@ SYMBOLS = {
 def get_live_prices(symbols, timeout=8):
     """
     Return (prices, errors).
-      prices: {"XAU": 3633.1, "EUR": 1.16, ...}  only for symbols that answered
+      prices: {"XAU": 3633.1, "XAU_bid": 3632.9, "XAU_ask": 3633.3, "EUR": 1.16, ...}
+              only for symbols that answered
       errors: list of messages for symbols that did not
     """
-    prices, errors = {}, []
+    prices, errors, quotes = {}, [], {}
     by_symbol = {symbol: name for name, symbol in symbols.items()}
     ws = websocket.create_connection(URL, timeout=timeout)
     try:
@@ -54,12 +55,16 @@ def get_live_prices(symbols, timeout=8):
                 name = by_symbol.get(tick.get("symbol"))
                 if name and name not in prices:
                     prices[name] = float(tick["quote"])
+                    if "bid" in tick and "ask" in tick:   # used for the SELL / BUY box
+                        quotes[f"{name}_bid"] = float(tick["bid"])
+                        quotes[f"{name}_ask"] = float(tick["ask"])
         try:
             ws.send(json.dumps({"forget_all": "ticks"}))
         except Exception:
             pass
     finally:
         ws.close()
+    prices.update(quotes)
     return prices, errors
 
 

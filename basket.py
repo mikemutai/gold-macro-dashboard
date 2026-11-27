@@ -39,12 +39,19 @@ def to_currency(gold_usd, rate, kind):
     return gold_usd / rate if kind == "usd_per" else gold_usd * rate
 
 
-def build_basket(gold, fx):
-    """Return a table with the gold price in USD and in each currency."""
-    gold = _clean(gold)
+def build_basket(gold, fx, intraday=False):
+    """
+    Return a table with the gold price in USD and in each currency.
+    intraday=True keeps the time of day (for 5m, 15m, 1h charts).
+    """
+    gold = gold if intraday else _clean(gold)
     columns = {"USD": gold}
     for code, rate in fx.items():
-        rate = _clean(rate).reindex(gold.index).ffill()
+        if intraday:
+            # line the currency up with gold's timestamps, using the latest rate
+            rate = rate.reindex(rate.index.union(gold.index)).ffill().reindex(gold.index)
+        else:
+            rate = _clean(rate).reindex(gold.index).ffill()
         columns[code] = to_currency(gold, rate, CURRENCIES[code][1])
     return pd.DataFrame(columns).dropna()
 
