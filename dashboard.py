@@ -17,10 +17,12 @@ from datetime import date, datetime, timezone
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 import basket
 import deriv_feed
 import gold_macro_check as g
+import livechart
 import pricechart
 
 try:
@@ -362,10 +364,57 @@ def show_chart():
                    "Yahoo's gold is futures, Deriv's is spot.")
 
 
+TV_SYMBOLS = {"Gold (XAUUSD)": "OANDA:XAUUSD", "EURUSD": "OANDA:EURUSD",
+              "GBPUSD": "OANDA:GBPUSD", "USDJPY": "OANDA:USDJPY",
+              "GBPJPY": "OANDA:GBPJPY"}
+TV_INTERVALS = {"5m": "5", "15m": "15", "30m": "30", "1h": "60", "4h": "240", "1D": "D"}
+
+
+def embed_html(html, height):
+    """Show an HTML page inside the app (newer Streamlit: st.iframe)."""
+    if hasattr(st, "iframe"):
+        st.iframe(html, height=height)
+    else:  # older Streamlit versions
+        components.html(html, height=height)
+
+
+def show_live_chart():
+    """Live chart: your browser connects straight to Deriv (no page refresh)."""
+    st.caption("Candles come from Deriv's own feed and update on every tick. "
+               "Pick the symbol, timeframe and time zone inside the chart.")
+    embed_html(livechart.live_chart_html("XAUUSD", "15m", "New York"), 800)
+
+
+def show_tradingview():
+    """TradingView's free chart widget: full toolbar, drawing tools, indicators."""
+    c1, c2, c3 = st.columns(3)
+    symbol = c1.selectbox("Symbol", list(TV_SYMBOLS), key="tv_symbol")
+    interval = c2.selectbox("Timeframe", list(TV_INTERVALS), index=1, key="tv_interval")
+    zone_name = c3.selectbox("Time zone", list(pricechart.TIMEZONES), key="tv_zone")
+    embed_html(
+        livechart.tradingview_widget_html(
+            TV_SYMBOLS[symbol], TV_INTERVALS[interval],
+            pricechart.TIMEZONES[zone_name], height=740),
+        760)
+    st.caption("TradingView's own widget and prices (not Deriv's). Add your "
+               "indicators from its Indicators menu: EMA 50, EMA 18 and EMA 9 "
+               "(Exponential Moving Average, source close) and SMA 50 (Moving "
+               "Average, source close). Drawings are not saved without a TradingView "
+               "account.")
+
+
 st.title("Gold macro dashboard")
 refresh_fast = st.fragment(run_every=refresh_seconds)
 refresh_slow = st.fragment(run_every=max(refresh_seconds, 15))
-tab_chart, tab_macro, tab_basket = st.tabs(["Chart", "Macro check", "Gold basket"])
+tab_live, tab_tv, tab_chart, tab_macro, tab_basket = st.tabs(
+    ["Live chart (Deriv)", "TradingView widget", "Chart (Yahoo)",
+     "Macro check", "Gold basket"])
+# The two TradingView charts update themselves in the browser, so they sit
+# outside the refresh timers (a refresh would reload them and lose your zoom).
+with tab_live:
+    show_live_chart()
+with tab_tv:
+    show_tradingview()
 with tab_chart:
     refresh_fast(show_chart)()
 with tab_macro:
