@@ -18,6 +18,7 @@ from datetime import date, datetime, timezone
 import pandas as pd
 import streamlit as st
 
+import basket
 import gold_macro_check as g
 
 try:
@@ -25,8 +26,6 @@ try:
     LOCAL_TZ = ZoneInfo("Africa/Nairobi")
 except Exception:  # if the timezone database is missing, fall back to UTC
     LOCAL_TZ = timezone.utc
-
-REFRESH_SECONDS = 900  # 15 minutes
 
 st.set_page_config(page_title="Gold Macro Dashboard", page_icon="🪙", layout="wide")
 
@@ -52,6 +51,10 @@ with st.sidebar:
     resistance_text = st.text_input(
         "Resistance", ", ".join(str(x) for x in g.RESISTANCE_LEVELS))
     st.caption("Update these weekly. Separate with commas.")
+    st.header("Refresh")
+    refresh_minutes = st.selectbox("Update every (minutes)", [1, 5, 15], index=1)
+    st.caption("Prices come from Yahoo Finance and can be delayed by up to "
+               "about 15 minutes. Good for context, not for trade execution.")
 
 g.SUPPORT_LEVELS = parse_levels(support_text, g.SUPPORT_LEVELS)
 g.RESISTANCE_LEVELS = parse_levels(resistance_text, g.RESISTANCE_LEVELS)
@@ -61,7 +64,7 @@ g.RESISTANCE_LEVELS = parse_levels(resistance_text, g.RESISTANCE_LEVELS)
 # DATA (cached, so it is only downloaded again after 15 minutes)
 # ----------------------------------------------------------------------------
 
-@st.cache_data(ttl=REFRESH_SECONDS, show_spinner="Updating data...")
+@st.cache_data(ttl=55, show_spinner="Updating data...")
 def load_data():
     """Download all three data sets. If one fails, keep going with the rest."""
     sources = {
@@ -75,6 +78,13 @@ def load_data():
             data[name] = fetch()
         except Exception as error:
             errors.append(f"Could not get {name} data: {error}")
+    fx = {}
+    for code, (ticker, _kind) in basket.CURRENCIES.items():
+        try:
+            fx[code] = g.get_close_prices(ticker)
+        except Exception as error:
+            errors.append(f"Could not get {code} rate: {error}")
+    data["fx"] = fx
     return data, errors
 
 
@@ -90,7 +100,6 @@ def bias_label(total):
 # THE PAGE (this block re-runs by itself every 15 minutes)
 # ----------------------------------------------------------------------------
 
-@st.fragment(run_every=REFRESH_SECONDS)
 def show_dashboard():
     data, errors = load_data()
     for message in errors:
@@ -112,7 +121,7 @@ def show_dashboard():
     if gold is not None:
         price = float(gold.iloc[-1])
         change = price - float(gold.iloc[-2])
-        top1.metric("Gold last close", f"{price:,.1f}", f"{change:+.1f}")
+        top1.metric("Gold latest price", f"{price:,.1f}", f"{change:+.1f}")
     top2.metric("Macro bias score", f"{total:+d} of {len(scores)}",
                 bias_label(total), delta_color="off")
     top3.metric("Last updated",
@@ -178,10 +187,36 @@ def show_dashboard():
 
     if os.path.exists(g.LOG_FILE):
         st.subheader("Your log (last 30 entries)")
-        st.dataframe(pd.read_csv(g.LOG_FILE).tail(30), use_container_width=True)
+        st.dataframe(pd.read_csv(g.LOG_FILE).tail(30))
+
+
+def show_basket():
+    """Gold priced in USD and other currencies."""
+    data, _errors = load_data()
+    gold, fx = data.get("gold"), data.get("fx", {})
+    if gold is None or not fx:
+        st.warning("The basket needs gold and currency data. "
+                   "See the warnings on the Macro check tab.")
+        return
+    table = basket.build_basket(gold, fx)
+    summary = basket.summarise(table)
+    above = int(summary["Above 50 SMA"].sum())
+    st.metric("Gold above its 50 SMA in", f"{above} of {len(summary)} currencies")
+    st.write(basket.read_breadth(summary))
+    st.subheader("Gold priced in each currency")
+    st.dataframe(summary.round(2))
+    st.subheader("Last 120 days, all set to 100 at the start")
+    st.line_chart(table.tail(120) / table.tail(120).iloc[0] * 100)
+    st.caption("Lines that move together mean the move is in gold itself. "
+               "If USD moves differently from the rest, the dollar is driving it.")
 
 
 st.title("Gold macro dashboard")
-show_dashboard()
+refresh = st.fragment(run_every=refresh_minutes * 60)
+tab_macro, tab_basket = st.tabs(["Macro check", "Gold basket"])
+with tab_macro:
+    refresh(show_dashboard)()
+with tab_basket:
+    refresh(show_basket)()
 st.caption("Context filter only. Not financial advice and not a trade signal. "
            "Your entry rules decide the trade.")
