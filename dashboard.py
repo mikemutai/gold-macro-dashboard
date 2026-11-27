@@ -19,6 +19,7 @@ import pandas as pd
 import streamlit as st
 
 import basket
+import deriv_feed
 import gold_macro_check as g
 
 try:
@@ -52,9 +53,12 @@ with st.sidebar:
         "Resistance", ", ".join(str(x) for x in g.RESISTANCE_LEVELS))
     st.caption("Update these weekly. Separate with commas.")
     st.header("Refresh")
-    refresh_minutes = st.selectbox("Update every (minutes)", [1, 5, 15], index=1)
-    st.caption("Prices come from Yahoo Finance and can be delayed by up to "
-               "about 15 minutes. Good for context, not for trade execution.")
+    refresh_seconds = st.selectbox(
+        "Update every", [15, 60, 300, 900], index=1,
+        format_func=lambda s: f"{s} seconds" if s < 60 else f"{s // 60} minute(s)")
+    st.caption("Gold and currency prices are live from Deriv. The dollar index "
+               "(Yahoo) can be delayed about 15 minutes and real yields are daily. "
+               "For context, not for trade execution.")
 
 g.SUPPORT_LEVELS = parse_levels(support_text, g.SUPPORT_LEVELS)
 g.RESISTANCE_LEVELS = parse_levels(resistance_text, g.RESISTANCE_LEVELS)
@@ -65,8 +69,8 @@ g.RESISTANCE_LEVELS = parse_levels(resistance_text, g.RESISTANCE_LEVELS)
 # ----------------------------------------------------------------------------
 
 @st.cache_data(ttl=55, show_spinner="Updating data...")
-def load_data():
-    """Download all three data sets. If one fails, keep going with the rest."""
+def load_history():
+    """Download Yahoo and FRED history. If one fails, keep going with the rest."""
     sources = {
         "gold": lambda: g.get_close_prices(g.GOLD_TICKER),
         "dollar": lambda: g.get_close_prices(g.DOLLAR_TICKER),
@@ -86,6 +90,30 @@ def load_data():
             errors.append(f"Could not get {code} rate: {error}")
     data["fx"] = fx
     return data, errors
+
+
+@st.cache_data(ttl=5)
+def load_live():
+    """Latest live prices from Deriv (shared by both tabs)."""
+    try:
+        return deriv_feed.get_live_prices(deriv_feed.SYMBOLS)
+    except Exception as error:
+        return {}, [str(error)]
+
+
+def load_data():
+    """History (cached) with the live Deriv prices laid over today's bar."""
+    history, errors = load_history()
+    data = dict(history)
+    data["fx"] = dict(history.get("fx", {}))
+    live, _live_errors = load_live()
+    if "XAU" in live and "gold" in data:
+        data["gold"] = deriv_feed.overlay(data["gold"], live["XAU"])
+    for code in data["fx"]:
+        if code in live:
+            data["fx"][code] = deriv_feed.overlay(data["fx"][code], live[code])
+    data["live"] = live
+    return data, list(errors)
 
 
 def bias_label(total):
@@ -125,7 +153,12 @@ def show_dashboard():
     top2.metric("Macro bias score", f"{total:+d} of {len(scores)}",
                 bias_label(total), delta_color="off")
     top3.metric("Last updated",
-                datetime.now(LOCAL_TZ).strftime("%H:%M, %d %b"))
+                datetime.now(LOCAL_TZ).strftime("%H:%M:%S, %d %b"))
+    if "XAU" in data.get("live", {}):
+        st.caption("Gold and currency prices: live from Deriv.")
+    else:
+        st.caption("Deriv live feed unavailable (or market closed). "
+                   "Showing Yahoo prices, which can be delayed.")
 
     # --- The three signals ----------------------------------------------------
     st.subheader("Signals")
@@ -212,7 +245,7 @@ def show_basket():
 
 
 st.title("Gold macro dashboard")
-refresh = st.fragment(run_every=refresh_minutes * 60)
+refresh = st.fragment(run_every=refresh_seconds)
 tab_macro, tab_basket = st.tabs(["Macro check", "Gold basket"])
 with tab_macro:
     refresh(show_dashboard)()
