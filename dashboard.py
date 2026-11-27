@@ -55,8 +55,11 @@ with st.sidebar:
     st.caption("Update these weekly. Separate with commas.")
     st.header("Refresh")
     refresh_seconds = st.selectbox(
-        "Update every", [15, 60, 300, 900], index=1,
-        format_func=lambda s: f"{s} seconds" if s < 60 else f"{s // 60} minute(s)")
+        "Update every", [1, 5, 15, 60, 300, 900], index=3,
+        format_func=lambda s: f"{s} second(s)" if s < 60 else f"{s // 60} minute(s)")
+    st.caption("The chart updates at this rate. The other tabs update at most "
+               "every 15 seconds. 1 second is the fastest that makes sense, because "
+               "Deriv sends about one price per second.")
     st.caption("Gold and currency prices are live from Deriv. The dollar index "
                "(Yahoo) can be delayed about 15 minutes and real yields are daily. "
                "For context, not for trade execution.")
@@ -93,7 +96,7 @@ def load_history():
     return data, errors
 
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=1)
 def load_live():
     """Latest live prices from Deriv (shared by both tabs)."""
     try:
@@ -289,13 +292,14 @@ def show_chart():
 
 
 st.title("Gold macro dashboard")
-refresh = st.fragment(run_every=refresh_seconds)
+refresh_fast = st.fragment(run_every=refresh_seconds)
+refresh_slow = st.fragment(run_every=max(refresh_seconds, 15))
 tab_chart, tab_macro, tab_basket = st.tabs(["Chart", "Macro check", "Gold basket"])
 with tab_chart:
-    refresh(show_chart)()
+    refresh_fast(show_chart)()
 with tab_macro:
-    refresh(show_dashboard)()
+    refresh_slow(show_dashboard)()
 with tab_basket:
-    refresh(show_basket)()
+    refresh_slow(show_basket)()
 st.caption("Context filter only. Not financial advice and not a trade signal. "
            "Your entry rules decide the trade.")

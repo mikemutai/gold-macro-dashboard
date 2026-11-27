@@ -42,6 +42,13 @@ INDICATORS = {
 
 DISPLAY_TZ = "Africa/Nairobi"
 
+# Chart look
+BACKGROUND = "#EEF0F3"   # whitish grey
+GRID = "#D5D9DF"
+BULL_COLOUR = "#0A2463"   # dark blue
+BEAR_COLOUR = "#000000"   # black
+LIVE_COLOUR = "#F57C00"   # orange, easy to see on a light background
+
 
 def get_ohlc(ticker, interval, period, resample=None):
     """Download open/high/low/close candles from Yahoo Finance."""
@@ -83,8 +90,8 @@ def make_figure(df, shown, candles=120, levels=None, live_price=None,
     fig.add_trace(go.Candlestick(
         x=df.index, open=df["Open"], high=df["High"], low=df["Low"],
         close=df["Close"], name="Price",
-        increasing_line_color="#26a69a", increasing_fillcolor="#26a69a",
-        decreasing_line_color="#ef5350", decreasing_fillcolor="#ef5350",
+        increasing_line_color=BULL_COLOUR, increasing_fillcolor=BULL_COLOUR,
+        decreasing_line_color=BEAR_COLOUR, decreasing_fillcolor=BEAR_COLOUR,
     ))
     for name in shown:
         kind, length, colour = INDICATORS[name]
@@ -101,20 +108,21 @@ def make_figure(df, shown, candles=120, levels=None, live_price=None,
         if low - pad <= price <= high + pad:   # only levels near the price
             fig.add_hline(
                 y=price, line_dash="dot", opacity=0.6,
-                line_color="#26a69a" if kind == "support" else "#ef5350",
+                line_color="#00897B" if kind == "support" else "#D32F2F",
                 annotation_text=f"{kind} {price:g}", annotation_position="left",
             )
     if live_price is not None:
         low, high = min(low, live_price), max(high, live_price)
         fig.add_hline(
-            y=live_price, line_dash="dash", line_color="#FFD54F",
+            y=live_price, line_dash="dash", line_color=LIVE_COLOUR,
             annotation_text=f"Deriv live {live_price:,.2f}",
             annotation_position="right",
         )
 
     step = df.index[-1] - df.index[-2] if len(df) > 1 else pd.Timedelta(minutes=1)
     fig.update_layout(
-        template="plotly_dark", height=650, uirevision=uirevision,
+        template="plotly_white", height=650, uirevision=uirevision,
+        paper_bgcolor=BACKGROUND, plot_bgcolor=BACKGROUND,
         dragmode="pan", hovermode="x unified",
         xaxis_rangeslider_visible=False,
         margin=dict(l=10, r=10, t=30, b=10),
@@ -124,7 +132,8 @@ def make_figure(df, shown, candles=120, levels=None, live_price=None,
         range=[visible.index[0], df.index[-1] + step * 6],
         rangebreaks=[dict(bounds=["sat", "mon"])],   # hide weekends
         showspikes=True, spikemode="across", spikethickness=1,
+        gridcolor=GRID,
     )
     fig.update_yaxes(range=[low - pad, high + pad], side="right",
-                     showspikes=True, spikethickness=1)
+                     showspikes=True, spikethickness=1, gridcolor=GRID)
     return fig
