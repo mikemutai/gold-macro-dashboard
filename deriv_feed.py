@@ -26,6 +26,7 @@ SYMBOLS = {
     "CHF": "frxUSDCHF",
     "AUD": "frxAUDUSD",
     "CAD": "frxUSDCAD",
+    "GBPJPY": "frxGBPJPY",
 }
 
 

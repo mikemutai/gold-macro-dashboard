@@ -21,6 +21,7 @@ import streamlit as st
 import basket
 import deriv_feed
 import gold_macro_check as g
+import pricechart
 
 try:
     from zoneinfo import ZoneInfo
@@ -244,9 +245,54 @@ def show_basket():
                "If USD moves differently from the rest, the dollar is driving it.")
 
 
+@st.cache_data(ttl=55, show_spinner="Loading chart data...")
+def load_ohlc(symbol, timeframe):
+    ticker = pricechart.SYMBOLS[symbol][0]
+    interval, period, resample = pricechart.TIMEFRAMES[timeframe]
+    return pricechart.get_ohlc(ticker, interval, period, resample)
+
+
+def show_chart():
+    """Interactive candlestick chart with your Backtesting 2.0 indicators."""
+    col1, col2, col3 = st.columns([2, 1, 1])
+    symbol = col1.selectbox("Symbol", list(pricechart.SYMBOLS), key="chart_symbol")
+    timeframe = col2.selectbox("Timeframe", list(pricechart.TIMEFRAMES),
+                               index=1, key="chart_timeframe")
+    candles = col3.slider("Candles shown", 50, 400, 120, key="chart_candles")
+    shown = st.multiselect("Indicators", list(pricechart.INDICATORS),
+                           default=list(pricechart.INDICATORS), key="chart_indicators")
+    is_gold = symbol.startswith("Gold")
+    show_levels = is_gold and st.checkbox("Show my support/resistance levels",
+                                          value=True, key="chart_levels")
+    try:
+        df = load_ohlc(symbol, timeframe)
+    except Exception as error:
+        st.warning(f"Could not load chart data: {error}")
+        return
+    live, _live_errors = load_live()
+    live_price = live.get(pricechart.SYMBOLS[symbol][1])
+    levels = []
+    if show_levels:
+        levels = ([(x, "support") for x in g.SUPPORT_LEVELS]
+                  + [(x, "resistance") for x in g.RESISTANCE_LEVELS])
+    fig = pricechart.make_figure(
+        df, shown, candles, levels, live_price,
+        uirevision=f"{symbol}-{timeframe}-{candles}")
+    st.plotly_chart(fig, config={"scrollZoom": True, "displaylogo": False})
+    st.caption("Drag to move, scroll to zoom, double-click to reset. Times are "
+               "Nairobi time. Candles come from Yahoo Finance.")
+    if live_price is not None:
+        gap = live_price - float(df["Close"].iloc[-1])
+        st.caption(f"Yahoo last price {df['Close'].iloc[-1]:,.2f} vs Deriv live "
+                   f"{live_price:,.2f} (gap {gap:+.2f}). Small gaps are normal: "
+                   "Yahoo's gold is futures, Deriv's is spot.")
+
+
 st.title("Gold macro dashboard")
 refresh = st.fragment(run_every=refresh_seconds)
-tab_macro, tab_basket = st.tabs(["Macro check", "Gold basket"])
+tab_chart, tab_macro, tab_basket = st.tabs(["Chart", "Macro check", "Gold basket"])
+with tab_chart:
+    refresh(show_chart)()
 with tab_macro:
     refresh(show_dashboard)()
 with tab_basket:
