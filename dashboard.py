@@ -31,7 +31,42 @@ try:
 except Exception:  # if the timezone database is missing, fall back to UTC
     LOCAL_TZ = timezone.utc
 
-st.set_page_config(page_title="Gold Macro Dashboard", page_icon="🪙", layout="wide")
+st.set_page_config(page_title="Gold Desk", page_icon="🪙", layout="wide")
+
+STYLE = """
+<style>
+.stApp { background: #EEF0F3; }
+[data-testid="stHeader"] { background: transparent; }
+.block-container { padding-top: 1.1rem; max-width: 1450px; }
+h1, h2, h3, h4 { color: #14213D; letter-spacing: -0.01em; }
+h3 { font-size: 1.15rem !important; margin-top: 0.6rem; }
+[data-testid="stMetric"] { background: #fff; border: 1px solid #E1E4E8; border-radius: 12px;
+    padding: 14px 18px; box-shadow: 0 1px 2px rgba(16,24,40,.06); }
+[data-testid="stMetricLabel"] p { color: #5B6572; font-weight: 600; }
+[data-testid="stMetricValue"] { color: #14213D; }
+[data-baseweb="tab-list"] { gap: 6px; border-bottom: 1px solid #D0D5DD; }
+button[data-baseweb="tab"] { background: #fff; border: 1px solid #E1E4E8; border-bottom: none;
+    border-radius: 10px 10px 0 0; padding: 8px 18px; font-weight: 700; color: #475467; }
+button[data-baseweb="tab"][aria-selected="true"] { background: #1F4FD8; color: #fff; }
+button[data-baseweb="tab"][aria-selected="true"] p { color: #fff; }
+[data-baseweb="tab-highlight"], [data-baseweb="tab-border"] { display: none; }
+[data-testid="stSidebar"] { background: #fff; border-right: 1px solid #E1E4E8; }
+[data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; }
+[data-testid="stExpander"] { background: #fff; border: 1px solid #E1E4E8; border-radius: 12px; }
+.hero { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;
+    background: linear-gradient(120deg, #14213D 0%, #1F4FD8 100%); color: #fff;
+    border-radius: 16px; padding: 18px 24px; box-shadow: 0 6px 18px rgba(20,33,61,.25); }
+.hero-title { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; }
+.hero-sub { opacity: .8; font-size: .9rem; margin-top: 2px; }
+.hero-tag { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
+    border-radius: 999px; padding: 6px 16px; font-weight: 700; color: #F5C451; }
+.pill { display: inline-block; padding: 5px 14px; border-radius: 999px; font-weight: 700; font-size: .85rem; }
+.pill-up { background: #E3F4EA; color: #1B7F45; }
+.pill-down { background: #FDE8E8; color: #B42318; }
+.pill-mid { background: #E4E7EC; color: #475467; }
+</style>
+"""
+st.markdown(STYLE, unsafe_allow_html=True)
 
 
 # ----------------------------------------------------------------------------
@@ -160,6 +195,9 @@ def show_dashboard():
                 bias_label(total), delta_color="off")
     top3.metric("Last updated",
                 datetime.now(LOCAL_TZ).strftime("%H:%M:%S, %d %b"))
+    pill = "pill-up" if total >= 2 else "pill-down" if total <= -2 else "pill-mid"
+    st.markdown(f'<span class="pill {pill}">Macro bias: {bias_label(total)}</span>',
+                unsafe_allow_html=True)
     if "XAU" in data.get("live", {}):
         st.caption("Gold and currency prices: live from Deriv.")
     else:
@@ -236,61 +274,26 @@ PLOT_CONFIG = {
 }
 
 
-@st.cache_data(ttl=55, show_spinner="Loading basket data...")
-def load_basket_table(timeframe):
-    """Gold priced in each currency, at the chosen timeframe."""
-    interval, period, resample = pricechart.TIMEFRAMES[timeframe]
-    gold = pricechart.get_ohlc("GC=F", interval, period, resample)["Close"]
-    fx = {}
-    for code, (ticker, _kind) in basket.CURRENCIES.items():
-        try:
-            fx[code] = pricechart.get_ohlc(ticker, interval, period, resample)["Close"]
-        except Exception:
-            pass   # skip a currency whose data is missing (KES is often patchy)
-    return basket.build_basket(gold, fx, intraday=(interval != "1d"))
-
-
-def show_basket():
-    """Gold priced in USD and other currencies, as a chart."""
+def show_basket_summary():
+    """Daily basket breadth (the chart itself is XAU BASKET on the Live chart tab)."""
     data, _errors = load_data()
     gold, fx = data.get("gold"), data.get("fx", {})
     if gold is None or not fx:
-        st.warning("The basket needs gold and currency data. "
-                   "See the warnings on the Macro check tab.")
         return
     summary = basket.summarise(basket.build_basket(gold, fx))
     above = int(summary["Above 50 SMA"].sum())
-    st.metric("Gold above its 50 SMA in", f"{above} of {len(summary)} currencies")
-    st.write(basket.read_breadth(summary))
-
-    col1, col2, col3 = st.columns(3)
-    timeframe = col1.selectbox("Timeframe", list(pricechart.TIMEFRAMES),
-                               index=len(pricechart.TIMEFRAMES) - 1,
-                               key="basket_timeframe")
-    zone_name = col2.selectbox("Time zone", list(pricechart.TIMEZONES),
-                               key="basket_zone")
-    candles = col3.slider("Candles shown", 50, 400, 150, key="basket_candles")
-    try:
-        table = load_basket_table(timeframe)
-    except Exception as error:
-        st.warning(f"Could not load basket chart data: {error}")
-        return
-    lines = st.multiselect("Currencies shown", list(table.columns),
-                           default=list(table.columns), key="basket_lines")
-    shown = st.multiselect("Indicators on the basket index",
-                           list(pricechart.INDICATORS),
-                           default=list(pricechart.INDICATORS), key="basket_indicators")
-    fig = pricechart.basket_figure(
-        table, shown, lines, candles,
-        uirevision=f"basket-{timeframe}-{candles}", timeframe=timeframe,
-        tz=pricechart.TIMEZONES[zone_name])
-    st.plotly_chart(fig, config=PLOT_CONFIG)
-    st.caption("Every line starts at 100. The thick black line is the basket "
-               "index (the average of the lines). Lines moving together mean the "
-               "move is in gold itself. If USD moves differently from the rest, "
-               "the dollar is driving it. Data: Yahoo Finance.")
+    st.subheader("Gold basket: breadth")
+    left, right = st.columns([1, 2])
+    left.metric("Gold above its 50 SMA in", f"{above} of {len(summary)} currencies")
+    right.write(basket.read_breadth(summary))
+    right.caption("See the XAU BASKET chart on the Live chart tab.")
     with st.expander("Table: gold priced in each currency (daily)"):
         st.dataframe(summary.round(2))
+
+
+def show_macro():
+    show_dashboard()
+    show_basket_summary()
 
 
 @st.cache_data(ttl=55, show_spinner="Loading chart data...")
@@ -364,7 +367,9 @@ def show_chart():
                    "Yahoo's gold is futures, Deriv's is spot.")
 
 
-TV_SYMBOLS = {"Gold (XAUUSD)": "OANDA:XAUUSD", "EURUSD": "OANDA:EURUSD",
+TV_SYMBOLS = {"Gold (XAUUSD)": "OANDA:XAUUSD", "Gold in EUR (XAUEUR)": "OANDA:XAUEUR",
+              "Gold in GBP (XAUGBP)": "OANDA:XAUGBP", "Gold in JPY (XAUJPY)": "OANDA:XAUJPY",
+              "EURUSD": "OANDA:EURUSD",
               "GBPUSD": "OANDA:GBPUSD", "USDJPY": "OANDA:USDJPY",
               "GBPJPY": "OANDA:GBPJPY"}
 TV_INTERVALS = {"5m": "5", "15m": "15", "30m": "30", "1h": "60", "4h": "240", "1D": "D"}
@@ -380,9 +385,7 @@ def embed_html(html, height):
 
 def show_live_chart():
     """Live chart: your browser connects straight to Deriv (no page refresh)."""
-    st.caption("Candles come from Deriv's own feed and update on every tick. "
-               "Pick the symbol, timeframe and time zone inside the chart.")
-    embed_html(livechart.live_chart_html("XAUUSD", "15m", "New York"), 800)
+    embed_html(livechart.live_chart_html("XAUUSD", "15m", "New York"), 930)
 
 
 def show_tradingview():
@@ -403,23 +406,23 @@ def show_tradingview():
                "account.")
 
 
-st.title("Gold macro dashboard")
+st.markdown(
+    '<div class="hero"><div><div class="hero-title">🪙 Gold Desk</div>'
+    '<div class="hero-sub">Live charts · XAU basket · macro bias · price alerts</div></div>'
+    '<div class="hero-tag">XAUUSD</div></div>', unsafe_allow_html=True)
 refresh_fast = st.fragment(run_every=refresh_seconds)
 refresh_slow = st.fragment(run_every=max(refresh_seconds, 15))
-tab_live, tab_tv, tab_chart, tab_macro, tab_basket = st.tabs(
-    ["Live chart (Deriv)", "TradingView widget", "Chart (Yahoo)",
-     "Macro check", "Gold basket"])
+tab_live, tab_tv, tab_macro, tab_chart = st.tabs(
+    ["Live chart", "TradingView", "Macro & basket", "Chart (Yahoo)"])
 # The two TradingView charts update themselves in the browser, so they sit
 # outside the refresh timers (a refresh would reload them and lose your zoom).
 with tab_live:
     show_live_chart()
 with tab_tv:
     show_tradingview()
+with tab_macro:
+    refresh_slow(show_macro)()
 with tab_chart:
     refresh_fast(show_chart)()
-with tab_macro:
-    refresh_slow(show_dashboard)()
-with tab_basket:
-    refresh_slow(show_basket)()
 st.caption("Context filter only. Not financial advice and not a trade signal. "
            "Your entry rules decide the trade.")
