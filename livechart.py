@@ -3,11 +3,11 @@ livechart.py  -  Two TradingView-powered charts for the dashboard
 
 1) live_chart_html():  a LIVE chart built with TradingView Lightweight Charts
    (free, open source). Your browser connects straight to Deriv's public price
-   feed, so candles update on every tick with no page refresh, and the candles
-   come from Deriv itself (spot gold), not Yahoo futures.
-   Includes your Backtesting 2.0 indicators: EMA 50, EMA 18, EMA 9, SMA 50.
+   feed, so candles update on every tick with no page refresh.
+   Symbols: XAUUSD, XAU BASKET (gold vs 7 currencies), EURUSD, GBPUSD, USDJPY,
+   GBPJPY. Indicators: EMA 50, EMA 18, EMA 9, SMA 50. Price alerts built in.
 
-2) tradingview_widget_html():  TradingView's free embeddable chart widget, with
+2) tradingview_widget_html():  TradingView's free embeddable chart widget with
    the full TradingView toolbar (drawing tools, indicators). It uses
    TradingView's own prices, not Deriv's.
 
@@ -19,44 +19,64 @@ import json
 LIGHTWEIGHT_URL = ("https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/"
                    "lightweight-charts.standalone.production.js")
 
+# Chart colours. The page around the chart always uses Black / Cyan / Magenta.
+CHART_THEMES = {
+    "Neon": {   # black, cyan, magenta
+        "bg": "#020306", "grid": "#111925", "text": "#B8C7CF", "cross": "#7CE6FC",
+        "up": "#7CE6FC", "down": "#FC36BE", "pd": "#8FA3AD", "eq": "#FC36BE",
+        "alert": "#FFB020", "scale": "#243247",
+        "ind": {"ema50": "#4C8DFF", "ema18": "#FFB020", "ema9": "#39E58C", "sma50": "#E6F1F5"},
+    },
+    "Classic": {   # whitish grey, blue and black (TradingView look)
+        "bg": "#DCDCDC", "grid": "#CFCFCF", "text": "#333333", "cross": "#000000",
+        "up": "#1F4FD8", "down": "#000000", "pd": "#6B6B6B", "eq": "#E53935",
+        "alert": "#F57C00", "scale": "#B0B0B0",
+        "ind": {"ema50": "#2962FF", "ema18": "#E91E63", "ema9": "#2E9E3E", "sma50": "#00ACC1"},
+    },
+}
+
 _LIVE_TEMPLATE = r"""
 <style>
+  :root { --bg:#020306; --panel:#0A0F1A; --line:#17212F; --edge:#243247; --text:#E6F1F5;
+          --muted:#9FB3BD; --cyan:#7CE6FC; --mag:#FC36BE; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: #EEF0F3; color: #14213D;
-               font-family: Inter, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+               font-family: Inter, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size: 14px; }
   #toolbar, #chips, #alertbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
-               background: #fff; border: 1px solid #E1E4E8; border-radius: 12px;
-               padding: 8px 12px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(16,24,40,.06); }
-  select, input[type=number] { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid #D0D5DD;
-               border-radius: 8px; background: #fff; color: #14213D; }
-  input[type=number] { width: 110px; }
-  button { font: inherit; font-size: 13px; font-weight: 600; padding: 5px 12px; border: 1px solid #D0D5DD;
-           border-radius: 999px; background: #fff; color: #14213D; cursor: pointer; }
-  button:hover { background: #F2F4F7; }
-  button.active { background: #1F4FD8; border-color: #1F4FD8; color: #fff; }
-  #tfs { display: flex; gap: 4px; }
-  #live { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #5B6572; }
-  #dot { width: 9px; height: 9px; border-radius: 50%; background: #98A2B3; display: inline-block; }
-  #dot.on { background: #12B76A; box-shadow: 0 0 0 3px rgba(18,183,106,.2); }
-  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
-          padding: 4px 10px; border: 1px solid #E1E4E8; border-radius: 999px; background: #F9FAFB; cursor: pointer; }
+               background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+               padding: 9px 14px; margin-bottom: 8px; }
+  select, input[type=number] { font: inherit; font-size: 14px; padding: 6px 10px; border: 1px solid var(--edge);
+               border-radius: 8px; background: #050912; color: var(--text); outline: none; }
+  select:focus, input:focus { border-color: var(--cyan); }
+  input[type=number] { width: 120px; }
+  input::placeholder { color: #6B7C86; }
+  button { font: inherit; font-size: 14px; font-weight: 600; padding: 6px 14px; border: 1px solid var(--edge);
+           border-radius: 999px; background: #050912; color: var(--text); cursor: pointer; }
+  button:hover { border-color: var(--cyan); color: var(--cyan); }
+  button.active { background: var(--cyan); border-color: var(--cyan); color: #020306; }
+  #tfs { display: flex; gap: 5px; flex-wrap: wrap; }
+  #live { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  #dot { width: 10px; height: 10px; border-radius: 50%; background: #4B5A66; display: inline-block; flex: none; }
+  #dot.on { background: var(--cyan); box-shadow: 0 0 0 3px rgba(124,230,252,.25); }
+  #dot.err { background: var(--mag); box-shadow: 0 0 0 3px rgba(252,54,190,.25); }
+  .chip { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--text);
+          padding: 5px 12px; border: 1px solid var(--edge); border-radius: 999px; background: #050912; cursor: pointer; user-select: none; }
   .chip i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-  .chip.off { opacity: .45; }
-  .lbl { font-size: 12px; font-weight: 700; color: #5B6572; text-transform: uppercase; letter-spacing: .04em; }
-  .alert-chip { background: #FFF4E5; border-color: #F5C98A; color: #9A5B00; }
-  #wrap { position: relative; border-radius: 12px; overflow: hidden; border: 1px solid #E1E4E8;
-          box-shadow: 0 1px 2px rgba(16,24,40,.06); }
+  .chip.off { opacity: .4; }
+  .lbl { font-size: 12px; font-weight: 700; color: var(--cyan); text-transform: uppercase; letter-spacing: .08em; }
+  .alert-chip { background: #2A1F08; border-color: #FFB020; color: #FFB020; }
+  #wrap { position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
   #chart { width: 100%; height: 620px; }
-  #quote { position: absolute; top: 10px; left: 10px; z-index: 5; background: #fff; border: 1px solid #bbb;
-           border-radius: 8px; padding: 5px 10px; font-size: 13px; font-weight: 700; display: none; }
-  #quote .sell { color: #D32F2F; } #quote .buy { color: #1F4FD8; }
-  #quote .spread { color: #555; font-weight: 400; margin: 0 8px; }
+  #quote { position: absolute; top: 10px; left: 10px; z-index: 5; background: var(--panel); border: 1px solid var(--edge);
+           border-radius: 8px; padding: 6px 12px; font-size: 14px; font-weight: 700; display: none; }
+  #quote .sell { color: var(--mag); } #quote .buy { color: var(--cyan); }
+  #quote .spread { color: var(--muted); font-weight: 400; margin: 0 10px; }
   #banner { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 9; display: none;
-            background: #F57C00; color: #fff; font-weight: 700; padding: 10px 18px; border-radius: 10px;
-            box-shadow: 0 6px 18px rgba(0,0,0,.25); cursor: pointer; font-size: 14px; }
-  #log { font-size: 12px; color: #5B6572; padding: 6px 4px; min-height: 18px; }
-  #foot { font-size: 11px; color: #667085; padding: 2px 4px 8px; }
-  #foot a { color: #667085; }
+            background: var(--mag); color: #020306; font-weight: 800; padding: 11px 20px; border-radius: 10px;
+            box-shadow: 0 6px 24px rgba(252,54,190,.45); cursor: pointer; font-size: 15px; }
+  #log { font-size: 13px; color: var(--muted); padding: 7px 4px; min-height: 20px; }
+  #foot { font-size: 12px; color: #7B8C96; padding: 2px 4px 8px; line-height: 1.5; }
+  #foot a { color: var(--cyan); }
 </style>
 <div id="toolbar"><select id="sym"></select><div id="tfs"></div><select id="zone"></select>
   <span id="live"><i id="dot"></i><span id="status"></span></span></div>
@@ -74,6 +94,7 @@ _LIVE_TEMPLATE = r"""
 <script src="__LIB__"></script>
 <script>
 (function () {
+  const THEME = __THEME__;
   const WS_URL = "wss://api.derivws.com/trading/v1/options/ws/public";
   const SYMBOLS = {
     "XAUUSD": {code: "frxXAUUSD", dec: 2, scale: 100},
@@ -97,13 +118,13 @@ _LIVE_TEMPLATE = r"""
   const TFS = {"1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1D": 86400};
   const ZONES = {"New York": "America/New_York", "Nairobi": "Africa/Nairobi", "UTC": "UTC"};
   const IND = [
-    {id: "ema50", label: "EMA 50", kind: "ema", len: 50, color: "#2962FF"},
-    {id: "ema18", label: "EMA 18", kind: "ema", len: 18, color: "#E91E63"},
-    {id: "ema9",  label: "EMA 9",  kind: "ema", len: 9,  color: "#2E9E3E"},
-    {id: "sma50", label: "SMA 50", kind: "sma", len: 50, color: "#00ACC1"}
+    {id: "ema50", label: "EMA 50", kind: "ema", len: 50, color: THEME.ind.ema50},
+    {id: "ema18", label: "EMA 18", kind: "ema", len: 18, color: THEME.ind.ema18},
+    {id: "ema9",  label: "EMA 9",  kind: "ema", len: 9,  color: THEME.ind.ema9},
+    {id: "sma50", label: "SMA 50", kind: "sma", len: 50, color: THEME.ind.sma50}
   ];
   const $ = id => document.getElementById(id);
-  function setStatus(t, on) { $("status").textContent = t; $("dot").className = on ? "on" : ""; }
+  function setStatus(t, state) { $("status").textContent = t; $("dot").className = state === true ? "on" : (state === "err" ? "err" : ""); }
 
   // ---------- indicator maths (same as the Python charts) ----------
   function emaArr(values, n) {
@@ -132,7 +153,7 @@ _LIVE_TEMPLATE = r"""
     $("tfs").appendChild(b); tfButtons[tf] = b;
   });
   const chipState = {};
-  IND.concat([{id: "levels", label: "Prev. day levels", color: "#6B6B6B"}]).forEach(i => {
+  IND.concat([{id: "levels", label: "Prev. day levels", color: THEME.pd}]).forEach(i => {
     const c = document.createElement("span"); c.className = "chip";
     c.innerHTML = '<i style="background:' + i.color + '"></i>' + i.label;
     chipState[i.id] = true;
@@ -140,7 +161,7 @@ _LIVE_TEMPLATE = r"""
     $("chips").appendChild(c);
   });
 
-  if (typeof LightweightCharts === "undefined") { setStatus("Could not load the chart library (network blocked?)."); return; }
+  if (typeof LightweightCharts === "undefined") { setStatus("Could not load the chart library (network blocked?).", "err"); return; }
 
   // ---------- chart ----------
   function zone() { return curTf === "1D" ? "UTC" : ZONES[curZone]; }
@@ -157,24 +178,24 @@ _LIVE_TEMPLATE = r"""
   const el = $("chart");
   const chart = LightweightCharts.createChart(el, {
     width: el.clientWidth, height: 620,
-    layout: {background: {type: "solid", color: "#DCDCDC"}, textColor: "#333"},
-    grid: {vertLines: {color: "#CFCFCF"}, horzLines: {color: "#CFCFCF"}},
+    layout: {background: {type: "solid", color: THEME.bg}, textColor: THEME.text},
+    grid: {vertLines: {color: THEME.grid}, horzLines: {color: THEME.grid}},
     crosshair: {mode: LightweightCharts.CrosshairMode.Normal,
-      vertLine: {color: "#000", labelBackgroundColor: "#000"}, horzLine: {color: "#000", labelBackgroundColor: "#000"}},
-    rightPriceScale: {borderColor: "#B0B0B0"},
-    timeScale: {borderColor: "#B0B0B0", timeVisible: true, secondsVisible: false, tickMarkFormatter: tickFmt, rightOffset: 8},
+      vertLine: {color: THEME.cross, labelBackgroundColor: THEME.cross}, horzLine: {color: THEME.cross, labelBackgroundColor: THEME.cross}},
+    rightPriceScale: {borderColor: THEME.scale},
+    timeScale: {borderColor: THEME.scale, timeVisible: true, secondsVisible: false, tickMarkFormatter: tickFmt, rightOffset: 8},
     localization: {timeFormatter: fullFmt}
   });
   const candleSeries = chart.addCandlestickSeries({
-    upColor: "#1F4FD8", downColor: "#000000", borderUpColor: "#1F4FD8", borderDownColor: "#000000",
-    wickUpColor: "#1F4FD8", wickDownColor: "#000000"});
+    upColor: THEME.up, downColor: THEME.down, borderUpColor: THEME.up, borderDownColor: THEME.down,
+    wickUpColor: THEME.up, wickDownColor: THEME.down});
   const lines = {};
   IND.forEach(i => { lines[i.id] = chart.addLineSeries({color: i.color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false}); });
   new ResizeObserver(() => chart.applyOptions({width: el.clientWidth})).observe(el);
 
   // ---------- data ----------
   let ws = null, candles = [], useTicks = false, priceLines = [], dayRow = null, lastPx = null;
-  let bars = {}, baseVals = null, pending = {}, tickLast = {}, tickBase = null;
+  let bars = {}, baseVals = null, tickLast = {}, tickBase = null, queue = [], awaiting = null, gotData = false, lastReply = "";
 
   function isBasket() { return !!SYMBOLS[curSym].basket; }
   function drawIndicators(full) {
@@ -191,7 +212,7 @@ _LIVE_TEMPLATE = r"""
     drawIndicators(true);
     const n = candles.length;
     chart.timeScale().setVisibleLogicalRange({from: Math.max(0, n - 120), to: n + 8});
-    if (n) lastPx = candles[n - 1].close;
+    if (n) { lastPx = candles[n - 1].close; gotData = true; }
   }
   function pushBar(bar) {
     const last = candles[candles.length - 1];
@@ -230,7 +251,8 @@ _LIVE_TEMPLATE = r"""
     return {time: g.time, open: sums.open / BASKET.length, high: sums.high / BASKET.length, low: sums.low / BASKET.length, close: sums.close / BASKET.length};
   }
   function buildBasketHistory() {
-    const gold = bars.XAU; baseVals = {};
+    const gold = bars.XAU || []; if (!gold.length) return [];
+    baseVals = {};
     for (const b of BASKET) { const fx = b.code === null ? null : fxCloseAt(b.name, gold[0].time); baseVals[b.name] = conv(gold[0].close, fx, b.kind); }
     return gold.map(basketBarFor).filter(Boolean);
   }
@@ -246,7 +268,7 @@ _LIVE_TEMPLATE = r"""
     const name = tick.symbol === GOLD ? "XAU" : (BASKET.find(b => b.code === tick.symbol) || {}).name;
     if (!name) return;
     tickLast[name] = +tick.quote;
-    if (!BASKET.every(b => b.code === null ? tickLast.XAU !== undefined : tickLast[b.name] !== undefined) || tickLast.XAU === undefined) return;
+    if (tickLast.XAU === undefined || !BASKET.every(b => b.code === null || tickLast[b.name] !== undefined)) return;
     const vals = {}; BASKET.forEach(b => { vals[b.name] = conv(tickLast.XAU, b.code === null ? null : tickLast[b.name], b.kind); });
     if (!tickBase) tickBase = vals;
     const idx = BASKET.reduce((a, b) => a + vals[b.name] / tickBase[b.name] * 100, 0) / BASKET.length;
@@ -261,7 +283,7 @@ _LIVE_TEMPLATE = r"""
     alertLines.forEach(l => candleSeries.removePriceLine(l)); alertLines = [];
     const list = alerts[curSym] || [], box = $("alertlist"); box.innerHTML = "";
     list.forEach(a => {
-      alertLines.push(candleSeries.createPriceLine({price: a.price, color: "#F57C00", lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: "Alert"}));
+      alertLines.push(candleSeries.createPriceLine({price: a.price, color: THEME.alert, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: "Alert"}));
       const c = document.createElement("span"); c.className = "chip alert-chip"; c.textContent = fmtPrice(a.price) + "  \u2715";
       c.onclick = () => { alerts[curSym] = (alerts[curSym] || []).filter(x => x.id !== a.id); saveAlerts(); drawAlerts(); };
       box.appendChild(c);
@@ -306,7 +328,7 @@ _LIVE_TEMPLATE = r"""
     clearLevels();
     if (!dayRow || !chipState.levels || isBasket()) return;
     const hi = +dayRow.high, lo = +dayRow.low, eq = (hi + lo) / 2, LS = LightweightCharts.LineStyle;
-    [[hi, "PDH", "#6B6B6B", LS.Dotted], [lo, "PDL", "#6B6B6B", LS.Dotted], [eq, "EQUILIBRIUM", "#E53935", LS.Dashed]].forEach(x => {
+    [[hi, "PDH", THEME.pd, LS.Dotted], [lo, "PDL", THEME.pd, LS.Dotted], [eq, "EQUILIBRIUM", THEME.eq, LS.Dashed]].forEach(x => {
       priceLines.push(candleSeries.createPriceLine({price: x[0], color: x[2], lineWidth: 1, lineStyle: x[3], axisLabelVisible: true, title: x[1]}));
     });
   }
@@ -320,7 +342,47 @@ _LIVE_TEMPLATE = r"""
   }
 
   // ---------- Deriv connection ----------
+  // Requests go out one at a time and each reply is matched to the request that
+  // is waiting, so it does not matter whether Deriv echoes a request id.
   function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+  function candlesReq(code, granularity, count, subscribe) {
+    const r = {ticks_history: code, adjust_start_time: 1, count: count, end: "latest", granularity: granularity, style: "candles"};
+    if (subscribe) r.subscribe = 1; return r;
+  }
+  function runQueue() { awaiting = queue.shift() || null; if (awaiting) send(awaiting.req); else historyDone(); }
+  function historyDone() {
+    if (useTicks) return;
+    if (isBasket()) {
+      const list = buildBasketHistory(); setHistory(list);
+      setStatus(list.length ? "Live from Deriv (XAU basket)" : "No basket candles returned", list.length > 0);
+    } else send({ticks: SYMBOLS[curSym].code, subscribe: 1});
+  }
+  function startTickFallback(why) {
+    queue = []; awaiting = null; useTicks = true; candles = []; tickLast = {}; tickBase = null;
+    setStatus("Candle history unavailable (" + why + "). Building candles from live ticks.", true);
+    (isBasket() ? [GOLD].concat(BASKET.filter(b => b.code).map(b => b.code)) : [SYMBOLS[curSym].code]).forEach(c => send({ticks: c, subscribe: 1}));
+  }
+  function onCandles(m) {
+    const item = awaiting; if (!item) return;
+    const list = (m.candles || []).map(toBar);
+    if (item.kind === "main") { setHistory(list); setStatus(list.length ? "Live from Deriv" : "Deriv returned no candles", list.length > 0); }
+    else if (item.kind === "daily") setLevels(m.candles);
+    else if (item.kind === "basket") bars[item.name] = list;
+    runQueue();
+  }
+  function onError(m) {
+    const msg = (m.error && (m.error.message || m.error.code)) || "unknown error";
+    const closed = /closed/i.test(msg);
+    if (awaiting) {
+      const item = awaiting;
+      if (closed && item.req.subscribe && !item.retried) { item.retried = true; delete item.req.subscribe; send(item.req); return; }   // closed market: ask for history only
+      if (item.kind === "daily") { runQueue(); return; }
+      if (closed) { queue = []; awaiting = null; setStatus("Market closed. " + msg, "err"); return; }
+      startTickFallback(m.error.code || msg); return;
+    }
+    if (closed) setStatus("Market closed. " + (candles.length ? "Showing the last available candles. " : "") + msg, false);
+    else setStatus("Error: " + msg, "err");
+  }
   function onTick(tick) {
     if (isBasket()) { if (useTicks) basketTick(tick); return; }
     if (tick.bid !== undefined && tick.ask !== undefined) {
@@ -333,50 +395,35 @@ _LIVE_TEMPLATE = r"""
     checkAlerts(+tick.quote);
   }
   function handle(m) {
-    const rid = m.req_id || (m.echo_req && m.echo_req.req_id);
-    if (m.error) {
-      if (rid === 1 || (rid >= 10 && rid < 20)) {
-        if (!useTicks) { useTicks = true; candles = []; tickLast = {}; tickBase = null; setStatus("Deriv candle history unavailable (" + m.error.code + "). Building candles from live ticks.", true);
-          if (isBasket()) { [GOLD].concat(BASKET.filter(b => b.code).map(b => b.code)).forEach(c => send({ticks: c, subscribe: 1})); } }
-      } else if (rid !== 3) setStatus("Error: " + (m.error.message || m.error.code), false);
-      return;
-    }
-    if (m.msg_type === "candles") {
-      if (rid === 1) { setHistory((m.candles || []).map(toBar)); setStatus("Live from Deriv", true); }
-      else if (rid === 3) setLevels(m.candles);
-      else if (rid >= 10 && rid < 20) {
-        const name = rid === 10 ? "XAU" : BASKET.filter(b => b.code)[rid - 11].name;
-        bars[name] = (m.candles || []).map(toBar); delete pending[name];
-        if (Object.keys(pending).length === 0 && !useTicks) { setHistory(buildBasketHistory()); setStatus("Live from Deriv (XAU basket)", true); }
-      }
-    } else if (m.msg_type === "ohlc") {
-      if (isBasket()) basketOnOhlc(m.ohlc.symbol, m.ohlc);
-      else { pushBar(toBar(m.ohlc)); }
-    } else if (m.msg_type === "tick") onTick(m.tick);
+    lastReply = (m.msg_type || (m.error ? "error" : "?"));
+    if (m.error) return onError(m);
+    if (Array.isArray(m.candles)) return onCandles(m);
+    if (m.msg_type === "ohlc" && m.ohlc) { if (isBasket()) basketOnOhlc(m.ohlc.symbol, m.ohlc); else pushBar(toBar(m.ohlc)); }
+    else if (m.msg_type === "tick" && m.tick) onTick(m.tick);
   }
   function connect() {
     setStatus("Connecting...", false);
     ws = new WebSocket(WS_URL);
     ws.onopen = () => {
-      const g = TFS[curTf];
+      const g = TFS[curTf]; queue = []; awaiting = null; gotData = false;
       if (isBasket()) {
-        bars = {}; pending = {XAU: 1}; baseVals = null;
-        send({ticks_history: GOLD, adjust_start_time: 1, count: 600, end: "latest", granularity: g, style: "candles", subscribe: 1, req_id: 10});
-        BASKET.filter(b => b.code).forEach((b, k) => { pending[b.name] = 1;
-          send({ticks_history: b.code, adjust_start_time: 1, count: 600, end: "latest", granularity: g, style: "candles", subscribe: 1, req_id: 11 + k}); });
+        bars = {}; baseVals = null;
+        queue.push({kind: "basket", name: "XAU", req: candlesReq(GOLD, g, 600, true)});
+        BASKET.filter(b => b.code).forEach(b => queue.push({kind: "basket", name: b.name, req: candlesReq(b.code, g, 600, true)}));
       } else {
         const code = SYMBOLS[curSym].code;
-        send({ticks_history: code, adjust_start_time: 1, count: 600, end: "latest", granularity: g, style: "candles", subscribe: 1, req_id: 1});
-        send({ticks: code, subscribe: 1, req_id: 2});
-        send({ticks_history: code, count: 3, end: "latest", granularity: 86400, style: "candles", req_id: 3});
+        queue.push({kind: "main", req: candlesReq(code, g, 600, true)});
+        queue.push({kind: "daily", req: candlesReq(code, 86400, 3, false)});
       }
+      runQueue();
+      setTimeout(() => { if (!gotData && !useTicks && queue.length + (awaiting ? 1 : 0) > 0) setStatus("Waiting for Deriv... (last reply: " + (lastReply || "none") + ")", false); }, 8000);
     };
-    ws.onmessage = ev => { try { handle(JSON.parse(ev.data)); } catch (e) { setStatus("Data error: " + e.message, false); } };
-    ws.onerror = () => setStatus("Connection error", false);
+    ws.onmessage = ev => { try { handle(JSON.parse(ev.data)); } catch (e) { setStatus("Data error: " + e.message, "err"); } };
+    ws.onerror = () => setStatus("Connection error", "err");
     ws.onclose = () => { setStatus("Disconnected. Reconnecting...", false); setTimeout(connect, 2000); };
   }
   function restart() {
-    useTicks = false; candles = []; dayRow = null; lastPx = null; bars = {}; baseVals = null; pending = {};
+    useTicks = false; candles = []; dayRow = null; lastPx = null; bars = {}; baseVals = null; queue = []; awaiting = null;
     candleSeries.setData([]); IND.forEach(i => lines[i.id].setData([])); clearLevels(); drawAlerts();
     $("quote").style.display = "none";
     if (ws) { ws.onclose = null; try { ws.close(); } catch (e) {} }
@@ -386,36 +433,43 @@ _LIVE_TEMPLATE = r"""
   selZone.onchange = () => { curZone = selZone.value; applyFormats(); };
 
   loadAlerts(); drawAlerts();
-  window.__test = {emaArr, smaArr, handle, getCandles: () => candles, addAlert, getAlerts: () => alerts, setSym: s => { curSym = s; restart(); }};   // used by automated tests only
+  window.__test = {emaArr, smaArr, handle, getCandles: () => candles, addAlert, getAlerts: () => alerts, setSym: s => { curSym = s; restart(); }, getQueueState: () => ({queue: queue.length, awaiting: awaiting && awaiting.kind})};   // used by automated tests only
   connect();
 })();
 </script>
 """
 
 
-def live_chart_html(symbol="XAUUSD", timeframe="15m", zone="New York"):
-    """HTML for the live Deriv chart (use with streamlit components.html)."""
+def live_chart_html(symbol="XAUUSD", timeframe="15m", zone="New York", theme="Neon"):
+    """HTML for the live Deriv chart (use with st.iframe or components.html)."""
+    colours = CHART_THEMES.get(theme, CHART_THEMES["Neon"])
     return (_LIVE_TEMPLATE.replace("__LIB__", LIGHTWEIGHT_URL)
+            .replace("__THEME__", json.dumps(colours))
             .replace("__SYM__", symbol).replace("__TF__", timeframe)
             .replace("__ZONE__", zone))
 
 
 def tradingview_widget_html(symbol="OANDA:XAUUSD", interval="15",
-                            timezone="America/New_York", height=720):
+                            timezone="America/New_York", height=720, theme="Neon"):
     """HTML for TradingView's free Advanced Chart widget."""
+    dark = theme == "Neon"
     config = {
         "autosize": True, "symbol": symbol, "interval": interval,
-        "timezone": timezone, "theme": "light", "style": "1", "locale": "en",
-        "backgroundColor": "#DCDCDC", "gridColor": "#CFCFCF",
+        "timezone": timezone, "theme": "dark" if dark else "light",
+        "style": "1", "locale": "en",
+        "backgroundColor": "#020306" if dark else "#DCDCDC",
+        "gridColor": "#111925" if dark else "#CFCFCF",
         "allow_symbol_change": True, "hide_side_toolbar": False,
         "withdateranges": True, "details": False, "calendar": False,
         "support_host": "https://www.tradingview.com",
     }
+    link = "#7CE6FC" if dark else "#1F4FD8"
     return f"""
+<style>html, body {{ margin: 0; background: {"#020306" if dark else "#DCDCDC"}; }}</style>
 <div class="tradingview-widget-container" style="height:{height}px;width:100%">
   <div class="tradingview-widget-container__widget" style="height:{height - 28}px;width:100%"></div>
   <div class="tradingview-widget-copyright" style="font-size:12px;font-family:Arial,sans-serif;padding:4px">
-    <a href="https://www.tradingview.com/" rel="noopener nofollow" target="_blank">Track all markets on TradingView</a>
+    <a href="https://www.tradingview.com/" rel="noopener nofollow" target="_blank" style="color:{link}">Track all markets on TradingView</a>
   </div>
   <script type="text/javascript"
     src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>

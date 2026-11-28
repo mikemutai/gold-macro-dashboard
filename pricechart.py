@@ -48,24 +48,35 @@ TIMEFRAMES = {
 TIMEZONES = {"New York": "America/New_York", "Nairobi": "Africa/Nairobi",
              "UTC": "UTC"}
 
-# name: (type, length, colour as in your TradingView settings)
+# name: (type, length). Settings from your guide: source = close, offset 0.
 INDICATORS = {
-    "EMA 50": ("ema", 50, "#2962FF"),   # blue
-    "EMA 18": ("ema", 18, "#E91E63"),   # pink
-    "EMA 9": ("ema", 9, "#2E9E3E"),     # green
-    "SMA 50": ("sma", 50, "#00ACC1"),   # cyan
+    "EMA 50": ("ema", 50),
+    "EMA 18": ("ema", 18),
+    "EMA 9": ("ema", 9),
+    "SMA 50": ("sma", 50),
 }
 
-# Chart look
-BACKGROUND = "#DCDCDC"    # whitish grey
-GRID = "#CFCFCF"
-TEXT = "#333333"
-BULL_COLOUR = "#1F4FD8"   # blue
-BEAR_COLOUR = "#000000"   # black
-LIVE_COLOUR = "#F57C00"   # orange: price coming from Deriv live
-CURRENCY_COLOURS = {"USD": "#B8860B", "EUR": "#1976D2", "GBP": "#7B1FA2",
-                    "JPY": "#D32F2F", "CHF": "#F57C00", "AUD": "#388E3C",
-                    "CAD": "#00838F", "KES": "#6D4C41"}
+# Chart looks: "Neon" = black / cyan / magenta, "Classic" = whitish grey / blue / black
+THEMES = {
+    "Neon": dict(
+        template="plotly_dark", bg="#020306", grid="#111925", text="#B8C7CF",
+        bull="#7CE6FC", bear="#FC36BE", live="#FFB020", spike="#7CE6FC",
+        faint="rgba(124,230,252,0.07)", dayline="#2A3646", daylabel="#8FA3AD",
+        pd_line="#8FA3AD", pd_tag="#2A3646", eq="#FC36BE", support="#7CE6FC",
+        resistance="#FC36BE", box_bg="#0A0F1A", box_border="#243247",
+        sell="#FC36BE", buy="#7CE6FC", hover_bg="#0A0F1A", hover_font="#E6F1F5",
+        tag_text="#020306",
+        ind={"EMA 50": "#4C8DFF", "EMA 18": "#FFB020", "EMA 9": "#39E58C", "SMA 50": "#E6F1F5"}),
+    "Classic": dict(
+        template="plotly_white", bg="#DCDCDC", grid="#CFCFCF", text="#333333",
+        bull="#1F4FD8", bear="#000000", live="#F57C00", spike="#000000",
+        faint="rgba(0,0,0,0.07)", dayline="#9A9A9A", daylabel="#555555",
+        pd_line="#6B6B6B", pd_tag="#4A4A4A", eq="#E53935", support="#00897B",
+        resistance="#D32F2F", box_bg="#FFFFFF", box_border="#BBBBBB",
+        sell="#D32F2F", buy="#1F4FD8", hover_bg="#FFFFFF", hover_font="#222222",
+        tag_text="#FFFFFF",
+        ind={"EMA 50": "#2962FF", "EMA 18": "#E91E63", "EMA 9": "#2E9E3E", "SMA 50": "#00ACC1"}),
+}
 
 
 def short_name(label):
@@ -148,22 +159,29 @@ def _tag(fig, y, text, background, colour="white"):
         borderpad=3)
 
 
-def _day_marks(fig, visible):
+def _contrast(hex_colour):
+    """Black or white text, whichever is easier to read on this colour."""
+    h = hex_colour.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return "#020306" if (0.299 * r + 0.587 * g + 0.114 * b) > 140 else "#FFFFFF"
+
+
+def _day_marks(fig, visible, t):
     """Dotted vertical line and day name at the start of each day."""
     first = visible.index[0]
     for day in visible.index.normalize().unique():
         if day > first:
             fig.add_shape(type="line", xref="x", yref="paper", x0=day, x1=day,
                           y0=0, y1=1, layer="below",
-                          line=dict(color="#9A9A9A", width=1, dash="dot"))
+                          line=dict(color=t["dayline"], width=1, dash="dot"))
         fig.add_annotation(
             xref="x", yref="paper", x=max(day, first) + pd.Timedelta(hours=2),
             y=1.0, yanchor="bottom", text=day.strftime("%a"), showarrow=False,
-            font=dict(size=12, color="#555555"))
+            font=dict(size=12, color=t["daylabel"]))
 
 
-def _watermark(fig, title, subtitle):
-    faint = "rgba(0,0,0,0.07)"
+def _watermark(fig, title, subtitle, t):
+    faint = t["faint"]
     fig.add_annotation(xref="paper", yref="paper", x=0.5, y=0.58, text=title,
                        showarrow=False, font=dict(size=84, color=faint))
     if subtitle:
@@ -172,25 +190,25 @@ def _watermark(fig, title, subtitle):
                            font=dict(size=40, color=faint))
 
 
-def _layout(fig, index, visible, step, low, high, pad, uirevision):
+def _layout(fig, index, visible, step, low, high, pad, uirevision, t):
     fig.update_layout(
-        template="plotly_white", height=680, uirevision=uirevision,
+        template=t["template"], height=680, uirevision=uirevision,
         dragmode="pan", hovermode="x unified",
-        paper_bgcolor=BACKGROUND, plot_bgcolor=BACKGROUND,
+        paper_bgcolor=t["bg"], plot_bgcolor=t["bg"],
         xaxis_rangeslider_visible=False,
-        margin=dict(l=10, r=95, t=60, b=10), font=dict(color=TEXT),
+        margin=dict(l=10, r=95, t=60, b=10), font=dict(color=t["text"]),
         legend=dict(orientation="h", yanchor="bottom", y=1.06, x=0),
-        hoverlabel=dict(bgcolor="white", font_color="#222222"),
-        newshape=dict(line_color=BULL_COLOUR),
+        hoverlabel=dict(bgcolor=t["hover_bg"], font_color=t["hover_font"]),
+        newshape=dict(line_color=t["bull"]),
     )
     fig.update_xaxes(
         range=[visible.index[0], index[-1] + step * 6],
-        rangebreaks=_range_breaks(index, step), gridcolor=GRID,
-        showspikes=True, spikemode="across", spikecolor="#000000",
+        rangebreaks=_range_breaks(index, step), gridcolor=t["grid"],
+        showspikes=True, spikemode="across", spikecolor=t["spike"],
         spikethickness=1)
     fig.update_yaxes(
-        range=[low - pad, high + pad], side="right", gridcolor=GRID,
-        showspikes=True, spikecolor="#000000", spikethickness=1)
+        range=[low - pad, high + pad], side="right", gridcolor=t["grid"],
+        showspikes=True, spikecolor=t["spike"], spikethickness=1)
 
 
 # ----------------------------------------------------------------------------
@@ -200,7 +218,7 @@ def _layout(fig, index, visible, step, low, high, pad, uirevision):
 def make_figure(df, shown, candles=120, levels=None, live_price=None,
                 uirevision="chart", prev_day=None, bid_ask=None,
                 name="XAUUSD", timeframe="15m", subtitle="", tz=None,
-                spread_scale=100, decimals=2):
+                spread_scale=100, decimals=2, theme="Neon"):
     """
     Candlestick chart.
       shown      indicator names to draw, e.g. ["EMA 9", "SMA 50"]
@@ -210,20 +228,22 @@ def make_figure(df, shown, candles=120, levels=None, live_price=None,
       prev_day   dict from previous_day_levels()
       bid_ask    (bid, ask) from Deriv, shown in the SELL / BUY box
       tz         time zone name for the time axis
+      theme      "Neon" (black / cyan / magenta) or "Classic" (grey / blue / black)
     """
+    t = THEMES.get(theme, THEMES["Neon"])
     df = _to_zone(df, tz)
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
         x=df.index, open=df["Open"], high=df["High"], low=df["Low"],
         close=df["Close"], name="Price",
-        increasing_line_color=BULL_COLOUR, increasing_fillcolor=BULL_COLOUR,
-        decreasing_line_color=BEAR_COLOUR, decreasing_fillcolor=BEAR_COLOUR,
+        increasing_line_color=t["bull"], increasing_fillcolor=t["bull"],
+        decreasing_line_color=t["bear"], decreasing_fillcolor=t["bear"],
     ))
     for indicator in shown:
-        kind, length, colour = INDICATORS[indicator]
+        kind, length = INDICATORS[indicator]
         fig.add_trace(go.Scatter(
             x=df.index, y=indicator_line(df["Close"], kind, length),
-            name=indicator, mode="lines", line=dict(color=colour, width=1.5)))
+            name=indicator, mode="lines", line=dict(color=t["ind"][indicator], width=1.5)))
 
     step = _step(df.index)
     visible = df.tail(candles)
@@ -239,41 +259,41 @@ def make_figure(df, shown, candles=120, levels=None, live_price=None,
     for price, kind in (levels or []):
         if inside(price):
             fig.add_hline(y=price, line_dash="dot", line_width=1, opacity=0.7,
-                          line_color="#00897B" if kind == "support" else "#D32F2F",
+                          line_color=t["support"] if kind == "support" else t["resistance"],
                           annotation_text=f"{kind} {price:g}",
                           annotation_position="left")
 
     # Previous day high / low / equilibrium
     if prev_day:
         for label, y, dash, colour, tag in (
-                ("PDH", prev_day["high"], "dot", "#6B6B6B", "#4A4A4A"),
-                ("PDL", prev_day["low"], "dot", "#6B6B6B", "#4A4A4A"),
-                ("EQUILIBRIUM", prev_day["equilibrium"], "dash", "#E53935", "#E53935")):
+                ("PDH", prev_day["high"], "dot", t["pd_line"], t["pd_tag"]),
+                ("PDL", prev_day["low"], "dot", t["pd_line"], t["pd_tag"]),
+                ("EQUILIBRIUM", prev_day["equilibrium"], "dash", t["eq"], t["eq"])):
             if inside(y):
                 fig.add_hline(y=y, line_dash=dash, line_width=1, line_color=colour)
-                _tag(fig, y, f"{y:,.{decimals}f}", tag)
+                _tag(fig, y, f"{y:,.{decimals}f}", tag, _contrast(tag))
                 if label == "EQUILIBRIUM":
                     fig.add_annotation(xref="paper", x=0.62, yref="y", y=y,
                                        yshift=-12, text=label, showarrow=False,
-                                       font=dict(size=12, color="#E53935"))
+                                       font=dict(size=12, color=t["eq"]))
                 else:
                     fig.add_annotation(xref="paper", x=0.005, xanchor="left",
                                        yref="y", y=y, yshift=9, text=label,
                                        showarrow=False,
-                                       font=dict(size=11, color="#6B6B6B"))
+                                       font=dict(size=11, color=t["pd_line"]))
 
     # Last price tag and dotted line
     if live_price is not None:
-        tag_colour = LIVE_COLOUR
+        tag_colour = t["live"]
     else:
         up = float(df["Close"].iloc[-1]) >= float(df["Open"].iloc[-1])
-        tag_colour = BULL_COLOUR if up else BEAR_COLOUR
+        tag_colour = t["bull"] if up else t["bear"]
     fig.add_hline(y=last_price, line_dash="dot", line_width=1, line_color=tag_colour)
-    _tag(fig, last_price, f"{last_price:,.{decimals}f}", tag_colour)
+    _tag(fig, last_price, f"{last_price:,.{decimals}f}", tag_colour, _contrast(tag_colour))
 
     if step < pd.Timedelta(days=1):
-        _day_marks(fig, visible)
-    _watermark(fig, f"{name}, {timeframe}", subtitle)
+        _day_marks(fig, visible, t)
+    _watermark(fig, f"{name}, {timeframe}", subtitle, t)
 
     # SELL / BUY quote box (display only, not order buttons)
     if bid_ask:
@@ -281,60 +301,11 @@ def make_figure(df, shown, candles=120, levels=None, live_price=None,
         spread = (ask - bid) * spread_scale
         fig.add_annotation(
             xref="paper", yref="paper", x=0.005, y=0.995, xanchor="left",
-            yanchor="top", showarrow=False, bgcolor="white",
-            bordercolor="#BBBBBB", borderwidth=1, borderpad=6, font=dict(size=13),
-            text=(f'<span style="color:#D32F2F"><b>SELL {bid:,.{decimals}f}</b></span>'
-                  f'   <span style="color:#555555">{spread:.1f}</span>   '
-                  f'<span style="color:{BULL_COLOUR}"><b>BUY {ask:,.{decimals}f}</b></span>'))
+            yanchor="top", showarrow=False, bgcolor=t["box_bg"],
+            bordercolor=t["box_border"], borderwidth=1, borderpad=6, font=dict(size=13),
+            text=(f'<span style="color:{t["sell"]}"><b>SELL {bid:,.{decimals}f}</b></span>'
+                  f'   <span style="color:{t["text"]}">{spread:.1f}</span>   '
+                  f'<span style="color:{t["buy"]}"><b>BUY {ask:,.{decimals}f}</b></span>'))
 
-    _layout(fig, df.index, visible, step, low, high, pad, uirevision)
-    return fig
-
-
-# ----------------------------------------------------------------------------
-# THE BASKET CHART
-# ----------------------------------------------------------------------------
-
-def basket_figure(table, shown, lines=None, candles=150, uirevision="basket",
-                  timeframe="1D", tz=None):
-    """
-    Gold priced in several currencies, all set to 100 at the start, plus a
-    thick black "XAU basket index" (the average of the lines). Your indicators
-    are drawn on the basket index.
-    """
-    table = _to_zone(table, tz)
-    rebased = table / table.iloc[0] * 100
-    index_line = rebased.mean(axis=1)
-    columns = [c for c in rebased.columns if lines is None or c in lines]
-
-    fig = go.Figure()
-    for code in columns:
-        fig.add_trace(go.Scatter(
-            x=rebased.index, y=rebased[code], name=f"XAU/{code}", mode="lines",
-            line=dict(color=CURRENCY_COLOURS.get(code, "#666666"), width=1.2),
-            opacity=0.75))
-    fig.add_trace(go.Scatter(
-        x=index_line.index, y=index_line, name="XAU basket index", mode="lines",
-        line=dict(color=BEAR_COLOUR, width=3)))
-    for indicator in shown:
-        kind, length, colour = INDICATORS[indicator]
-        fig.add_trace(go.Scatter(
-            x=index_line.index, y=indicator_line(index_line, kind, length),
-            name=f"{indicator} (index)", mode="lines",
-            line=dict(color=colour, width=1.5, dash="dot")))
-
-    step = _step(rebased.index)
-    visible = rebased.tail(candles)
-    shown_values = visible[columns] if columns else visible
-    low = float(min(shown_values.min().min(), index_line.tail(candles).min()))
-    high = float(max(shown_values.max().max(), index_line.tail(candles).max()))
-    pad = (high - low) * 0.08 or 1.0
-
-    last = float(index_line.iloc[-1])
-    _tag(fig, last, f"{last:,.2f}", BEAR_COLOUR)
-    fig.add_hline(y=100, line_dash="dot", line_width=1, line_color="#6B6B6B")
-    if step < pd.Timedelta(days=1):
-        _day_marks(fig, visible)
-    _watermark(fig, f"XAU BASKET, {timeframe}", "Gold vs a basket of currencies")
-    _layout(fig, rebased.index, visible, step, low, high, pad, uirevision)
+    _layout(fig, df.index, visible, step, low, high, pad, uirevision, t)
     return fig

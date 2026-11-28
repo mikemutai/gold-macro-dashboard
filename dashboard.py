@@ -35,35 +35,79 @@ st.set_page_config(page_title="Gold Desk", page_icon="🪙", layout="wide")
 
 STYLE = """
 <style>
-.stApp { background: #EEF0F3; }
-[data-testid="stHeader"] { background: transparent; }
-.block-container { padding-top: 1.1rem; max-width: 1450px; }
-h1, h2, h3, h4 { color: #14213D; letter-spacing: -0.01em; }
-h3 { font-size: 1.15rem !important; margin-top: 0.6rem; }
-[data-testid="stMetric"] { background: #fff; border: 1px solid #E1E4E8; border-radius: 12px;
-    padding: 14px 18px; box-shadow: 0 1px 2px rgba(16,24,40,.06); }
-[data-testid="stMetricLabel"] p { color: #5B6572; font-weight: 600; }
-[data-testid="stMetricValue"] { color: #14213D; }
-[data-baseweb="tab-list"] { gap: 6px; border-bottom: 1px solid #D0D5DD; }
-button[data-baseweb="tab"] { background: #fff; border: 1px solid #E1E4E8; border-bottom: none;
-    border-radius: 10px 10px 0 0; padding: 8px 18px; font-weight: 700; color: #475467; }
-button[data-baseweb="tab"][aria-selected="true"] { background: #1F4FD8; color: #fff; }
-button[data-baseweb="tab"][aria-selected="true"] p { color: #fff; }
+:root { --bg:#020306; --panel:#0A0F1A; --panel2:#0E1524; --line:#1C2738; --edge:#263449;
+        --text:#E6F1F5; --muted:#9FB3BD; --cyan:#7CE6FC; --mag:#FC36BE; color-scheme: dark; }
+
+/* ---- page ---- */
+.stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] { background: var(--bg) !important; color: var(--text) !important; }
+[data-testid="stHeader"] { background: transparent !important; }
+[data-testid="stHeader"] * { color: var(--muted) !important; }
+.block-container { padding-top: 3.6rem !important; max-width: 1450px; }
+
+/* ---- text: everything readable on black ---- */
+.stApp p, .stApp li, .stApp label, .stApp td, .stApp th,
+.stApp div[data-testid="stMarkdownContainer"] { color: var(--text); }
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * { color: var(--muted) !important; font-size: .86rem !important; }
+h1, h2, h3, h4, h5 { color: var(--cyan) !important; letter-spacing: -0.01em; }
+h3 { font-size: 1.12rem !important; margin-top: .5rem; }
+a { color: var(--cyan) !important; }
+[data-testid="stWidgetLabel"] p, label p { color: var(--text) !important; font-weight: 600; }
+
+/* ---- inputs ---- */
+[data-baseweb="select"] > div, [data-baseweb="input"] > div, [data-baseweb="base-input"],
+.stTextInput input, .stNumberInput input { background: var(--panel2) !important; color: var(--text) !important; border-color: var(--edge) !important; }
+[data-baseweb="select"] *, [data-baseweb="input"] input { color: var(--text) !important; }
+[data-baseweb="select"] svg { fill: var(--cyan) !important; }
+[data-baseweb="popover"] ul, [data-baseweb="menu"] { background: var(--panel2) !important; }
+[data-baseweb="popover"] li, [data-baseweb="popover"] li * { color: var(--text) !important; }
+[data-baseweb="popover"] li:hover, [data-baseweb="popover"] li[aria-selected="true"] { background: #16213A !important; }
+[data-baseweb="tag"] { background: #0E2A33 !important; border: 1px solid var(--cyan) !important; }
+[data-baseweb="tag"] * { color: var(--cyan) !important; }
+[data-testid="stSlider"] [role="slider"] { background: var(--cyan) !important; }
+[data-testid="stSlider"] div, [data-testid="stThumbValue"], [data-testid="stTickBarMin"], [data-testid="stTickBarMax"] { color: var(--text) !important; }
+[data-testid="stCheckbox"] span, [data-testid="stRadio"] label p { color: var(--text) !important; }
+.stButton > button { background: var(--panel2); color: var(--cyan); border: 1px solid var(--cyan); border-radius: 999px; font-weight: 700; }
+.stButton > button:hover { background: var(--cyan); color: #020306; border-color: var(--cyan); }
+
+/* ---- tabs ---- */
+[data-baseweb="tab-list"] { gap: 8px; border-bottom: 1px solid var(--line); }
+button[data-baseweb="tab"] { background: var(--panel); border: 1px solid var(--line); border-bottom: none;
+    border-radius: 10px 10px 0 0; padding: 9px 22px; }
+button[data-baseweb="tab"] p { color: var(--muted) !important; font-weight: 700; font-size: .95rem; }
+button[data-baseweb="tab"]:hover p { color: var(--cyan) !important; }
+button[data-baseweb="tab"][aria-selected="true"] { background: var(--cyan); border-color: var(--cyan); }
+button[data-baseweb="tab"][aria-selected="true"] p { color: #020306 !important; }
 [data-baseweb="tab-highlight"], [data-baseweb="tab-border"] { display: none; }
-[data-testid="stSidebar"] { background: #fff; border-right: 1px solid #E1E4E8; }
-[data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; }
-[data-testid="stExpander"] { background: #fff; border: 1px solid #E1E4E8; border-radius: 12px; }
-.hero { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;
-    background: linear-gradient(120deg, #14213D 0%, #1F4FD8 100%); color: #fff;
-    border-radius: 16px; padding: 18px 24px; box-shadow: 0 6px 18px rgba(20,33,61,.25); }
-.hero-title { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; }
-.hero-sub { opacity: .8; font-size: .9rem; margin-top: 2px; }
-.hero-tag { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
-    border-radius: 999px; padding: 6px 16px; font-weight: 700; color: #F5C451; }
-.pill { display: inline-block; padding: 5px 14px; border-radius: 999px; font-weight: 700; font-size: .85rem; }
-.pill-up { background: #E3F4EA; color: #1B7F45; }
-.pill-down { background: #FDE8E8; color: #B42318; }
-.pill-mid { background: #E4E7EC; color: #475467; }
+
+/* ---- cards ---- */
+[data-testid="stMetric"] { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--cyan);
+    border-radius: 12px; padding: 14px 18px; }
+[data-testid="stMetricLabel"] p { color: var(--muted) !important; font-weight: 600; }
+[data-testid="stMetricValue"], [data-testid="stMetricValue"] * { color: #FFFFFF !important; }
+[data-testid="stExpander"] { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+[data-testid="stExpander"] summary, [data-testid="stExpander"] summary * { color: var(--text) !important; }
+[data-testid="stAlert"] { background: #1A0E17 !important; border: 1px solid var(--mag); border-radius: 10px; }
+[data-testid="stAlert"] * { color: #FFD6F1 !important; }
+[data-testid="stDataFrame"] { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+
+/* ---- sidebar ---- */
+[data-testid="stSidebar"] { background: #05080F !important; border-right: 1px solid var(--line); }
+[data-testid="stSidebar"] h3 { margin-top: 1.1rem; }
+
+/* ---- header banner and badges ---- */
+.hero { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px;
+    background: linear-gradient(120deg, #020306 0%, #0B0A1A 55%, #2A0A24 100%);
+    border: 1px solid rgba(124,230,252,.35); border-radius: 16px; padding: 20px 26px;
+    box-shadow: 0 0 28px rgba(124,230,252,.10), 0 0 40px rgba(252,54,190,.08); }
+.hero .hero-title { font-size: 1.7rem; font-weight: 800; color: #FFFFFF !important; letter-spacing: -0.02em; }
+.hero .hero-title b { color: var(--cyan) !important; }
+.hero .hero-sub { color: #B8C7CF !important; font-size: .95rem; margin-top: 3px; }
+.hero .hero-tag { border: 1px solid var(--mag); color: var(--mag) !important; border-radius: 999px;
+    padding: 6px 18px; font-weight: 800; letter-spacing: .06em; }
+.pill { display: inline-block; padding: 5px 14px; border-radius: 999px; font-weight: 700; font-size: .88rem; margin: 6px 0; }
+.pill-up { background: #0E2A33; color: #7CE6FC !important; border: 1px solid rgba(124,230,252,.4); }
+.pill-down { background: #2A0E22; color: #FC36BE !important; border: 1px solid rgba(252,54,190,.4); }
+.pill-mid { background: #141C2B; color: #B8C7CF !important; border: 1px solid #2A3646; }
 </style>
 """
 st.markdown(STYLE, unsafe_allow_html=True)
@@ -84,22 +128,27 @@ def parse_levels(text, fallback):
 
 
 with st.sidebar:
-    st.header("Your key levels")
+    st.markdown("### Chart colours")
+    chart_theme = st.radio("Theme", ["Neon", "Classic"], horizontal=True,
+                           key="chart_theme", label_visibility="collapsed",
+                           help="Neon = black, cyan and magenta. Classic = grey, blue and black.")
+    st.markdown("### Key levels")
     support_text = st.text_input(
         "Support", ", ".join(str(x) for x in g.SUPPORT_LEVELS))
     resistance_text = st.text_input(
         "Resistance", ", ".join(str(x) for x in g.RESISTANCE_LEVELS))
-    st.caption("Update these weekly. Separate with commas.")
-    st.header("Refresh")
+    st.caption("Update weekly. Separate numbers with commas.")
+    st.markdown("### Refresh")
     refresh_seconds = st.selectbox(
-        "Update every", [1, 5, 15, 60, 300, 900], index=3,
+        "Yahoo chart and macro update every", [1, 5, 15, 60, 300, 900], index=3,
         format_func=lambda s: f"{s} second(s)" if s < 60 else f"{s // 60} minute(s)")
-    st.caption("The chart updates at this rate. The other tabs update at most "
-               "every 15 seconds. 1 second is the fastest that makes sense, because "
-               "Deriv sends about one price per second.")
-    st.caption("Gold and currency prices are live from Deriv. The dollar index "
-               "(Yahoo) can be delayed about 15 minutes and real yields are daily. "
-               "For context, not for trade execution.")
+    with st.expander("About the data"):
+        st.markdown(
+            "- **Live chart:** Deriv, updates on every tick.\n"
+            "- **Yahoo chart:** Yahoo Finance, can be about 15 minutes delayed.\n"
+            "- **Dollar index:** Yahoo. **Real yields:** FRED, daily.\n"
+            "- Other tabs update at most every 15 seconds.\n"
+            "- For context, not for trade execution.")
 
 g.SUPPORT_LEVELS = parse_levels(support_text, g.SUPPORT_LEVELS)
 g.RESISTANCE_LEVELS = parse_levels(resistance_text, g.RESISTANCE_LEVELS)
@@ -353,7 +402,8 @@ def show_chart():
         uirevision=f"{symbol}-{timeframe}-{candles}", prev_day=prev_day,
         bid_ask=bid_ask, name=pricechart.short_name(symbol), timeframe=timeframe,
         subtitle=pricechart.SUBTITLES.get(symbol, ""),
-        tz=pricechart.TIMEZONES[zone_name], spread_scale=scale, decimals=decimals)
+        tz=pricechart.TIMEZONES[zone_name], spread_scale=scale, decimals=decimals,
+        theme=chart_theme)
     st.plotly_chart(fig, config=PLOT_CONFIG)
     st.caption("Drag to move, scroll to zoom, double-click to reset. Use the "
                "toolbar at the top right of the chart to draw lines and boxes. "
@@ -385,7 +435,7 @@ def embed_html(html, height):
 
 def show_live_chart():
     """Live chart: your browser connects straight to Deriv (no page refresh)."""
-    embed_html(livechart.live_chart_html("XAUUSD", "15m", "New York"), 930)
+    embed_html(livechart.live_chart_html("XAUUSD", "15m", "New York", chart_theme), 930)
 
 
 def show_tradingview():
@@ -397,7 +447,7 @@ def show_tradingview():
     embed_html(
         livechart.tradingview_widget_html(
             TV_SYMBOLS[symbol], TV_INTERVALS[interval],
-            pricechart.TIMEZONES[zone_name], height=740),
+            pricechart.TIMEZONES[zone_name], height=740, theme=chart_theme),
         760)
     st.caption("TradingView's own widget and prices (not Deriv's). Add your "
                "indicators from its Indicators menu: EMA 50, EMA 18 and EMA 9 "
@@ -407,7 +457,7 @@ def show_tradingview():
 
 
 st.markdown(
-    '<div class="hero"><div><div class="hero-title">🪙 Gold Desk</div>'
+    '<div class="hero"><div><div class="hero-title">🪙 Gold <b>Desk</b></div>'
     '<div class="hero-sub">Live charts · XAU basket · macro bias · price alerts</div></div>'
     '<div class="hero-tag">XAUUSD</div></div>', unsafe_allow_html=True)
 refresh_fast = st.fragment(run_every=refresh_seconds)

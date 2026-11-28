@@ -1,0 +1,9 @@
+# Dashboard colours: Black, Cyan and Magenta.
+# Put this file in your GitHub repo at  .streamlit/config.toml
+[theme]
+base = "dark"
+primaryColor = "#7CE6FC"
+backgroundColor = "#020306"
+secondaryBackgroundColor = "#0A0F1A"
+textColor = "#E6F1F5"
+font = "sans serif"
