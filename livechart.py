@@ -1,15 +1,11 @@
 """
-livechart.py  -  Two TradingView-powered charts for the dashboard
+livechart.py  -  Live chart for the dashboard (powered by TradingView Lightweight Charts)
 
-1) live_chart_html():  a LIVE chart built with TradingView Lightweight Charts
+live_chart_html():  a LIVE chart built with TradingView Lightweight Charts
    (free, open source). Your browser connects straight to Deriv's public price
    feed, so candles update on every tick with no page refresh.
    Symbols: XAUUSD, XAU BASKET (gold vs 7 currencies), EURUSD, GBPUSD, USDJPY,
    GBPJPY. Indicators: EMA 50, EMA 18, EMA 9, SMA 50. Price alerts built in.
-
-2) tradingview_widget_html():  TradingView's free embeddable chart widget with
-   the full TradingView toolbar (drawing tools, indicators). It uses
-   TradingView's own prices, not Deriv's.
 
 Used by dashboard.py. Keep it in the same folder.
 """
@@ -447,33 +443,3 @@ def live_chart_html(symbol="XAUUSD", timeframe="15m", zone="New York", theme="Ne
             .replace("__THEME__", json.dumps(colours))
             .replace("__SYM__", symbol).replace("__TF__", timeframe)
             .replace("__ZONE__", zone))
-
-
-def tradingview_widget_html(symbol="OANDA:XAUUSD", interval="15",
-                            timezone="America/New_York", height=720, theme="Neon"):
-    """HTML for TradingView's free Advanced Chart widget."""
-    dark = theme == "Neon"
-    config = {
-        "autosize": True, "symbol": symbol, "interval": interval,
-        "timezone": timezone, "theme": "dark" if dark else "light",
-        "style": "1", "locale": "en",
-        "backgroundColor": "#020306" if dark else "#DCDCDC",
-        "gridColor": "#111925" if dark else "#CFCFCF",
-        "allow_symbol_change": True, "hide_side_toolbar": False,
-        "withdateranges": True, "details": False, "calendar": False,
-        "support_host": "https://www.tradingview.com",
-    }
-    link = "#7CE6FC" if dark else "#1F4FD8"
-    return f"""
-<style>html, body {{ margin: 0; background: {"#020306" if dark else "#DCDCDC"}; }}</style>
-<div class="tradingview-widget-container" style="height:{height}px;width:100%">
-  <div class="tradingview-widget-container__widget" style="height:{height - 28}px;width:100%"></div>
-  <div class="tradingview-widget-copyright" style="font-size:12px;font-family:Arial,sans-serif;padding:4px">
-    <a href="https://www.tradingview.com/" rel="noopener nofollow" target="_blank" style="color:{link}">Track all markets on TradingView</a>
-  </div>
-  <script type="text/javascript"
-    src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
-  {json.dumps(config)}
-  </script>
-</div>
-"""

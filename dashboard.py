@@ -16,6 +16,7 @@ import os
 from datetime import date, datetime, timezone
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -24,6 +25,7 @@ import deriv_feed
 import gold_macro_check as g
 import livechart
 import pricechart
+import sentiment
 
 try:
     from zoneinfo import ZoneInfo
@@ -107,6 +109,24 @@ button[data-baseweb="tab"][aria-selected="true"] p { color: #020306 !important; 
 .pill { display: inline-block; padding: 5px 14px; border-radius: 999px; font-weight: 700; font-size: .88rem; margin: 6px 0; }
 .pill-up { background: #0E2A33; color: #7CE6FC !important; border: 1px solid rgba(124,230,252,.4); }
 .pill-down { background: #2A0E22; color: #FC36BE !important; border: 1px solid rgba(252,54,190,.4); }
+.s-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+.s-card .s-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.s-card .s-name { color: #FFFFFF !important; font-weight: 700; font-size: 1rem; }
+.s-card .s-date { color: var(--muted) !important; font-size: .82rem; }
+.s-card .s-body { color: var(--text) !important; margin: 8px 0 6px; line-height: 1.5; font-size: .93rem; }
+.s-card .s-watch { color: var(--muted) !important; font-size: .86rem; }
+.s-card .s-watch b { color: var(--cyan) !important; }
+.s-card a { font-size: .85rem; }
+.chip { display: inline-block; padding: 2px 11px; border-radius: 999px; font-weight: 700; font-size: .78rem; margin-left: 6px; }
+.chip-Bullish { background: #0E2A33; color: #7CE6FC !important; border: 1px solid rgba(124,230,252,.5); }
+.chip-Bearish, .chip-Hawkish { background: #2A0E22; color: #FC36BE !important; border: 1px solid rgba(252,54,190,.5); }
+.chip-Cautious { background: #2A1F08; color: #FFB020 !important; border: 1px solid rgba(255,176,32,.5); }
+.chip-Neutral, .chip-Dovish { background: #141C2B; color: #B8C7CF !important; border: 1px solid #2A3646; }
+.n-row { display: flex; gap: 10px; align-items: baseline; padding: 7px 4px; border-bottom: 1px solid var(--line); }
+.n-row .n-mark { font-weight: 800; width: 16px; flex: none; }
+.n-row .n-up { color: #7CE6FC !important; } .n-row .n-down { color: #FC36BE !important; } .n-row .n-mid { color: #6B7C86 !important; }
+.n-row .n-title { color: var(--text) !important; }
+.n-row .n-meta { color: var(--muted) !important; font-size: .8rem; margin-left: auto; white-space: nowrap; }
 .pill-mid { background: #141C2B; color: #B8C7CF !important; border: 1px solid #2A3646; }
 </style>
 """
@@ -417,14 +437,6 @@ def show_chart():
                    "Yahoo's gold is futures, Deriv's is spot.")
 
 
-TV_SYMBOLS = {"Gold (XAUUSD)": "OANDA:XAUUSD", "Gold in EUR (XAUEUR)": "OANDA:XAUEUR",
-              "Gold in GBP (XAUGBP)": "OANDA:XAUGBP", "Gold in JPY (XAUJPY)": "OANDA:XAUJPY",
-              "EURUSD": "OANDA:EURUSD",
-              "GBPUSD": "OANDA:GBPUSD", "USDJPY": "OANDA:USDJPY",
-              "GBPJPY": "OANDA:GBPJPY"}
-TV_INTERVALS = {"5m": "5", "15m": "15", "30m": "30", "1h": "60", "4h": "240", "1D": "D"}
-
-
 def embed_html(html, height):
     """Show an HTML page inside the app (newer Streamlit: st.iframe)."""
     if hasattr(st, "iframe"):
@@ -438,38 +450,227 @@ def show_live_chart():
     embed_html(livechart.live_chart_html("XAUUSD", "15m", "New York", chart_theme), 930)
 
 
-def show_tradingview():
-    """TradingView's free chart widget: full toolbar, drawing tools, indicators."""
-    c1, c2, c3 = st.columns(3)
-    symbol = c1.selectbox("Symbol", list(TV_SYMBOLS), key="tv_symbol")
-    interval = c2.selectbox("Timeframe", list(TV_INTERVALS), index=1, key="tv_interval")
-    zone_name = c3.selectbox("Time zone", list(pricechart.TIMEZONES), key="tv_zone")
-    embed_html(
-        livechart.tradingview_widget_html(
-            TV_SYMBOLS[symbol], TV_INTERVALS[interval],
-            pricechart.TIMEZONES[zone_name], height=740, theme=chart_theme),
-        760)
-    st.caption("TradingView's own widget and prices (not Deriv's). Add your "
-               "indicators from its Indicators menu: EMA 50, EMA 18 and EMA 9 "
-               "(Exponential Moving Average, source close) and SMA 50 (Moving "
-               "Average, source close). Drawings are not saved without a TradingView "
-               "account.")
+@st.cache_data(ttl=600, show_spinner="Reading the markets...")
+def load_gauges():
+    return sentiment.market_gauges()
+
+
+@st.cache_data(ttl=3600)
+def load_fear_greed():
+    return sentiment.cnn_fear_greed()
+
+
+@st.cache_data(ttl=1800)
+def load_cot():
+    return sentiment.cot_gold()
+
+
+@st.cache_data(ttl=900, show_spinner="Reading headlines...")
+def load_news(source):
+    if source == "Government & central banks":
+        return sentiment.headlines(sentiment.GOVERNMENT_QUERY)
+    return sentiment.headlines(sentiment.SOURCES[source])
+
+
+@st.cache_data(ttl=900)
+def load_fed():
+    return sentiment.fed_releases()
+
+
+@st.cache_data(ttl=900, show_spinner="Reading headlines...")
+def load_all_news():
+    """All sources together, for the overall headline mood."""
+    everything, failed = [], []
+    for name in sentiment.SOURCES:
+        try:
+            everything += load_news(name)
+        except Exception:
+            failed.append(name)
+    return everything, failed
+
+
+def stance_chip(stance):
+    return f'<span class="chip chip-{stance}">{stance}</span>' if stance else ""
+
+
+def news_rows(items):
+    """Headline list with a coloured mark for the tone of each headline."""
+    if not items:
+        st.caption("No headlines found.")
+        return
+    html = []
+    for item in items:
+        mark, css = ("▲", "n-up") if item["score"] > 0 else ("▼", "n-down") if item["score"] < 0 else ("●", "n-mid")
+        when = item["when"].strftime("%d %b %H:%M") if item["when"] else ""
+        meta = f'{item["source"]} · {when}'.strip(" ·")
+        title = item["title"].replace("<", "&lt;").replace(">", "&gt;")
+        html.append(f'<div class="n-row"><span class="n-mark {css}">{mark}</span>'
+                    f'<a class="n-title" href="{item["link"]}" target="_blank">{title}</a>'
+                    f'<span class="n-meta">{meta}</span></div>')
+    st.markdown("".join(html), unsafe_allow_html=True)
+
+
+def show_sentiment():
+    """What the market, Wall Street and top institutions are feeling."""
+    top_left, top_right = st.columns([5, 1])
+    top_left.caption("Free public data. Bloomberg, S&P Global and WSJ are paywalled, so only "
+                     "their public headlines are used. This shows the mood, not trade signals.")
+    if top_right.button("Refresh", key="sent_refresh"):
+        st.cache_data.clear()
+        st.rerun()
+
+    # ---------- overview ----------
+    gauges, gauge_errors = load_gauges()
+    score, mood, parts = sentiment.risk_mood(gauges)
+    news_all, news_failed = load_all_news()
+    tone = sentiment.overall_tone(news_all)
+    try:
+        cot, cot_group = load_cot()
+        percentile = float((cot["net"].tail(52) <= cot["net"].iloc[-1]).mean() * 100)
+    except Exception:
+        cot, cot_group, percentile = None, "", None
+
+    left, right = st.columns([2, 3])
+    with left:
+        if score is not None:
+            st.plotly_chart(sentiment.risk_gauge(score, mood), config={"displayModeBar": False})
+            st.caption("Our risk mood (0 = extreme fear, 100 = extreme greed) from the VIX, "
+                       "S&P 500 and Nasdaq trend, and the credit spread: "
+                       + ", ".join(f"{n} {v}" for n, v in parts) + ".")
+        else:
+            st.warning("Could not read the market data for the risk mood.")
+    with right:
+        r1, r2 = st.columns(2)
+        by_key = {g_["key"]: g_ for g_ in gauges}
+        if "vix" in by_key:
+            r1.metric("VIX", f'{by_key["vix"]["value"]:.1f}', f'{by_key["vix"]["chg1"]:+.2f} today',
+                      delta_color="inverse")
+        try:
+            fg, fg_label = load_fear_greed()
+            r2.metric("CNN Fear & Greed", f"{fg:.0f}", fg_label, delta_color="off")
+        except Exception:
+            r2.metric("CNN Fear & Greed", "n/a", "unofficial feed", delta_color="off")
+        r3, r4 = st.columns(2)
+        if tone:
+            lean = "bullish" if tone["bullish"] > tone["bearish"] else "bearish" if tone["bearish"] > tone["bullish"] else "balanced"
+            r3.metric("Headline mood (gold)", lean.title(),
+                      f'{tone["bullish"]:.0f}% up · {tone["bearish"]:.0f}% down · {tone["count"]} headlines',
+                      delta_color="off")
+        else:
+            r3.metric("Headline mood (gold)", "n/a", delta_color="off")
+        if percentile is not None:
+            r4.metric("Hedge-fund gold positioning", f"{percentile:.0f}th percentile",
+                      f'{cot["tonnes"].iloc[-1]:,.0f} t net long (52-week range)', delta_color="off")
+        else:
+            r4.metric("Hedge-fund gold positioning", "n/a", delta_color="off")
+
+    # ---------- what Wall Street watches ----------
+    st.subheader("What Wall Street is watching")
+    for message in gauge_errors:
+        st.caption(f"Could not read {message}")
+    cols = st.columns(4)
+    for i, g_ in enumerate(gauges):
+        d = g_["decimals"]
+        unit_pct = g_["kind"] == "index"
+        delta = f'{g_["chg1"]:+.2f}%' if unit_pct else f'{g_["chg1"]:+.{max(d, 2)}f}'
+        cols[i % 4].metric(g_["label"], f'{g_["value"]:,.{d}f}', delta,
+                           delta_color="inverse" if g_["kind"] in ("vix", "spread") else "normal")
+        cols[i % 4].caption(g_["read"])
+
+    # ---------- positioning ----------
+    st.subheader("What big funds are doing (CFTC positioning)")
+    if cot is not None and len(cot):
+        fig = go.Figure(go.Scatter(x=cot["date"], y=cot["tonnes"], mode="lines",
+                                   line=dict(color="#7CE6FC", width=2.5), fill="tozeroy",
+                                   fillcolor="rgba(124,230,252,0.12)", name="Net long (tonnes)"))
+        fig.update_layout(template="plotly_dark", height=300, paper_bgcolor="rgba(0,0,0,0)",
+                          plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=10, r=10, t=10, b=10),
+                          yaxis_title="tonnes", font=dict(color="#B8C7CF"),
+                          xaxis=dict(gridcolor="#111925"), yaxis=dict(gridcolor="#111925"))
+        st.plotly_chart(fig, config={"displayModeBar": False})
+        change4 = cot["tonnes"].iloc[-1] - cot["tonnes"].iloc[-5] if len(cot) > 4 else 0
+        st.caption(f"{cot_group}, COMEX gold futures, weekly. Latest report "
+                   f'{cot["date"].iloc[-1]:%d %b %Y}: {cot["tonnes"].iloc[-1]:,.0f} tonnes net long '
+                   f"({change4:+,.0f} t over 4 weeks). Falling positions mean funds are selling; "
+                   "very low positions can mean selling is exhausted. Source: CFTC.")
+    else:
+        st.caption("CFTC positioning is not available right now.")
+
+    # ---------- institutions ----------
+    st.subheader("What top institutions are saying")
+    views = sentiment.load_views("institution_views.csv")
+    if len(views):
+        f1, f2 = st.columns(2)
+        cats = f1.multiselect("Type", sorted(views["category"].unique()), key="views_cat")
+        stances = f2.multiselect("Stance", sorted(views["stance"].unique()), key="views_stance")
+        shown_views = views
+        if cats:
+            shown_views = shown_views[shown_views["category"].isin(cats)]
+        if stances:
+            shown_views = shown_views[shown_views["stance"].isin(stances)]
+        for _, v in shown_views.iterrows():
+            date = v["date"].strftime("%d %b %Y") if pd.notna(v["date"]) else ""
+            link = f'<a href="{v["url"]}" target="_blank">Source</a>' if v["url"] else ""
+            st.markdown(
+                f'<div class="s-card"><div class="s-head"><span class="s-name">{v["institution"]}'
+                f'{stance_chip(v["stance"])}</span><span class="s-date">{v["category"]} · {v["topic"]} · {date}</span></div>'
+                f'<div class="s-body">{v["summary"]}</div>'
+                f'<div class="s-watch"><b>Watching:</b> {v["watching"]} &nbsp; {link}</div></div>',
+                unsafe_allow_html=True)
+        st.caption("Summaries are short paraphrases of public reports and of the World Gold Council "
+                   "documents you shared, dated as shown. The stance is about the topic named. "
+                   "Edit institution_views.csv in your GitHub repo to add or update entries.")
+    else:
+        st.caption("Add rows to institution_views.csv to list institution views here.")
+
+    # ---------- headlines ----------
+    st.subheader("Headlines by source")
+    names = list(sentiment.SOURCES) + ["Government & central banks"]
+    source = st.radio("Source", names, horizontal=True, key="news_source", label_visibility="collapsed")
+    try:
+        items = load_news(source)
+        mood_here = sentiment.overall_tone(items)
+        if mood_here:
+            st.caption(f'{source}: {mood_here["bullish"]:.0f}% of headlines lean bullish for gold, '
+                       f'{mood_here["bearish"]:.0f}% bearish, {mood_here["neutral"]:.0f}% neutral.')
+        news_rows(items)
+    except Exception as error:
+        st.caption(f"Could not load {source} headlines: {error}")
+    if news_failed:
+        st.caption("Not loaded for the overall mood: " + ", ".join(news_failed))
+    st.caption("▲ leans bullish for gold, ▼ leans bearish, ● neutral. The mark comes from a simple "
+               "word list (for example: rally, safe haven vs. plunge, rate hike), so it is rough.")
+
+    # ---------- government ----------
+    st.subheader("Government and central bank releases")
+    try:
+        fed = load_fed()
+        html = []
+        for item in fed:
+            when = item["when"].strftime("%d %b %Y") if item["when"] else ""
+            title = item["title"].replace("<", "&lt;").replace(">", "&gt;")
+            html.append(f'<div class="n-row"><span class="n-mark n-mid">●</span>'
+                        f'<a class="n-title" href="{item["link"]}" target="_blank">{title}</a>'
+                        f'<span class="n-meta">Federal Reserve · {when}</span></div>')
+        st.markdown("".join(html) or "No releases found.", unsafe_allow_html=True)
+    except Exception as error:
+        st.caption(f"Could not load Federal Reserve releases: {error}")
 
 
 st.markdown(
     '<div class="hero"><div><div class="hero-title">🪙 Gold <b>Desk</b></div>'
-    '<div class="hero-sub">Live charts · XAU basket · macro bias · price alerts</div></div>'
+    '<div class="hero-sub">Live charts · XAU basket · market sentiment · price alerts</div></div>'
     '<div class="hero-tag">XAUUSD</div></div>', unsafe_allow_html=True)
 refresh_fast = st.fragment(run_every=refresh_seconds)
 refresh_slow = st.fragment(run_every=max(refresh_seconds, 15))
-tab_live, tab_tv, tab_macro, tab_chart = st.tabs(
-    ["Live chart", "TradingView", "Macro & basket", "Chart (Yahoo)"])
-# The two TradingView charts update themselves in the browser, so they sit
-# outside the refresh timers (a refresh would reload them and lose your zoom).
+tab_live, tab_sent, tab_macro, tab_chart = st.tabs(
+    ["Live chart", "Market sentiment", "Macro & basket", "Chart (Yahoo)"])
+# The live chart updates itself in the browser, so it sits outside the refresh
+# timers (a refresh would reload it and lose your zoom).
 with tab_live:
     show_live_chart()
-with tab_tv:
-    show_tradingview()
+with tab_sent:
+    show_sentiment()
 with tab_macro:
     refresh_slow(show_macro)()
 with tab_chart:
